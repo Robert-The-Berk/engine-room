@@ -1,0 +1,789 @@
+<title>Engine Room</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700;800&family=Barlow:wght@400;500;600&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: the engine room floor plan on the left, the chief engineer's status board on the right; one dark industrial look on purpose */
+:root {
+  --bg: #11161c;
+  --panel: #1a2129;
+  --panel2: #212a34;
+  --line: #2f3b47;
+  --fg: #e4eaef;
+  --muted: #8e9cab;
+  --hazard: #f2a03d;
+  --bad: #ff5a4f;
+  --good: #5fd08f;
+  --c-shields: #4cc9f0;
+  --c-weapons: #ff7a45;
+  --c-life: #6fdc8c;
+  --c-engines: #b18cff;
+  --c-repair: #f5d547;
+  --f-display: 'Oxanium', 'Arial Narrow', sans-serif;
+  --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono: 'Share Tech Mono', ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+[hidden] { display: none !important; }
+body {
+  font-family: var(--f-body); font-size: 14px; line-height: 1.4;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px 32px;
+}
+.wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 16px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .14em; color: var(--hazard); text-transform: uppercase; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(30px, 4.6vw, 44px); line-height: 1; margin: 2px 0 0; letter-spacing: .02em; text-transform: uppercase; }
+.hdr-right { display: flex; gap: 8px; align-items: center; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: start; }
+@media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.stage { position: relative; min-width: 0; }
+canvas#room { display: block; width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #0b0f13; touch-action: none; cursor: pointer; }
+
+.prompt { min-height: 22px; font-family: var(--f-mono); font-size: 14px; color: var(--hazard); margin-top: 6px; }
+
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; width: min(500px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+.panel h2 { font-family: var(--f-display); font-weight: 800; font-size: 28px; margin: 0; line-height: 1; text-transform: uppercase; }
+.panel h2.win { color: var(--good); }
+.panel h2.lose { color: var(--bad); }
+.panel p { margin: 0; color: var(--muted); }
+.panel ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--fg); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { font: 600 14px var(--f-body); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn[aria-pressed="true"] { border-color: var(--hazard); color: var(--hazard); }
+.btn.primary { background: var(--hazard); border-color: var(--hazard); color: #1a1206; font-family: var(--f-display); font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: .04em; }
+button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
+.stats { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+
+aside { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card h3 { margin: 0; font-family: var(--f-display); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.big { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.big b { font-family: var(--f-mono); font-size: 26px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.big span { color: var(--muted); font-size: 13px; }
+.bar { height: 10px; border-radius: 5px; background: #0d1217; border: 1px solid var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 100%; background: var(--good); }
+.kv { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+.kv .lbl { color: var(--muted); }
+.kv .val { font-family: var(--f-mono); text-align: right; font-variant-numeric: tabular-nums; }
+
+.alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.alerts li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 5px; background: color-mix(in srgb, var(--bad) 14%, transparent); border-left: 3px solid var(--bad); font-weight: 600; }
+.alerts li span { font-family: var(--f-mono); font-weight: 400; color: var(--muted); }
+.alerts .soon { background: color-mix(in srgb, var(--hazard) 14%, transparent); border-left-color: var(--hazard); }
+.alerts .none { background: transparent; border-left-color: var(--line); color: var(--muted); font-weight: 400; }
+
+.systems { display: flex; flex-direction: column; gap: 8px; }
+.sys { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; }
+.sys .dot { width: 10px; height: 10px; border-radius: 2px; }
+.sys .nm { font-weight: 600; }
+.sys .nums { font-family: var(--f-mono); font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.sys .meter { grid-column: 2 / 4; position: relative; height: 8px; background: #0d1217; border: 1px solid var(--line); border-radius: 4px; }
+.sys .meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+.sys .meter .dm { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); }
+.chip { font-family: var(--f-mono); font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
+.chip.ok { color: var(--good); }
+.chip.warn { color: var(--hazard); }
+.chip.trip { color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, transparent); }
+.chip.low { color: var(--bad); }
+
+.station { border-color: var(--hazard); }
+.station .title { font-family: var(--f-display); font-weight: 700; font-size: 20px; text-transform: uppercase; }
+.ctrl { display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 8px; align-items: center; }
+.ctrl button { font: 700 26px var(--f-display); height: 52px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); cursor: pointer; touch-action: manipulation; }
+.ctrl .readout { text-align: center; font-family: var(--f-mono); font-size: 28px; }
+.ctrl .readout small { display: block; font-size: 12px; color: var(--muted); font-family: var(--f-body); }
+.hint { font-size: 12px; color: var(--muted); }
+kbd { font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel2); color: var(--fg); }
+
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+details summary { cursor: pointer; font-family: var(--f-display); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; max-width: 80ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Deck 7 · Main reactor</div>
+      <h1>Engine Room</h1>
+    </div>
+    <div class="hdr-right">
+      <button class="btn" id="pause">Pause</button>
+      <button class="btn" id="mute" aria-pressed="false">Sound on</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="stage" id="stage">
+      <canvas id="room" aria-label="Engine room floor plan. Click a station to walk to it."></canvas>
+      <div class="prompt" id="prompt" role="status" aria-live="polite"></div>
+      <div class="overlay" id="startBox">
+        <div class="panel">
+          <h2>Chief engineer, report</h2>
+          <p>The bridge is charging the jump drive. Keep every system powered until it is ready.</p>
+          <ul>
+            <li>Walk to a console to set its power. Match what the system needs.</li>
+            <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel.</li>
+            <li>Too little power and the ship takes damage.</li>
+            <li>Swap spent fuel rods and coolant before they run dry.</li>
+          </ul>
+          <div class="seg" id="diff">
+            <button class="btn" data-v="0" aria-pressed="false">Cadet</button>
+            <button class="btn" data-v="1" aria-pressed="true">Engineer</button>
+            <button class="btn" data-v="2" aria-pressed="false">Chief</button>
+          </div>
+          <button class="btn primary" id="start">Start shift</button>
+          <p class="hint">Move with <kbd>WASD</kbd> or arrows, or click a station. <kbd>Q</kbd>/<kbd>E</kbd> lower or raise power, <kbd>R</kbd> matches the load, <kbd>Space</kbd> uses a station. <kbd>P</kbd> pauses.</p>
+        </div>
+      </div>
+      <div class="overlay" id="endBox" hidden><div class="panel" id="endPanel"></div></div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <div class="big"><span>Jump drive ready in</span><b id="jump">4:00</b></div>
+        <div class="big"><span>Hull integrity</span><b id="hullTxt">100%</b></div>
+        <div class="bar"><i id="hullBar"></i></div>
+      </div>
+
+      <div class="card station" id="stationCard" hidden></div>
+
+      <div class="card">
+        <h3>Bridge alerts</h3>
+        <ul class="alerts" id="alerts"></ul>
+      </div>
+
+      <div class="card">
+        <h3>Power systems · MW</h3>
+        <div class="systems" id="systems"></div>
+      </div>
+
+      <div class="card">
+        <h3>Reactor</h3>
+        <div class="kv">
+          <span class="lbl">Output available</span><span></span><span class="val" id="r-cap"></span>
+          <span class="lbl">Allocated</span><span></span><span class="val" id="r-alloc"></span>
+          <span class="lbl">Fuel rod</span><div class="bar"><i id="r-fuelBar"></i></div><span class="val" id="r-fuel"></span>
+          <span class="lbl">Coolant</span><div class="bar"><i id="r-coolBar"></i></div><span class="val" id="r-cool"></span>
+          <span class="lbl">Spares</span><span></span><span class="val" id="r-spares"></span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <details>
+    <summary>Engineer's manual</summary>
+    <ul>
+      <li><b>Consoles</b> along the top wall set power for Shields, Weapons, Life support, Engines and Repair. The white mark on each meter is what the system needs right now.</li>
+      <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 2.5 seconds. When an alert ends and a system needs less, turn it down or it will trip. A tripped system gets no power until you reset it at the breaker panel.</li>
+      <li><b>Reactor.</b> Total allocation can't exceed reactor output. Low coolant cuts output; an empty fuel rod shuts it down.</li>
+      <li><b>Refuelling.</b> When the rod is below 40%, eject it at the fuel port (left of the reactor). Drop it in the disposal chute, take a fresh rod from the fuel rack and load it. Coolant works the same way on the right side. Ejecting cuts power until the new one is in, so pick a quiet moment.</li>
+      <li><b>Bridge alerts</b> arrive a few seconds before the power need hits ("in 5s"). Use that time to get to the right console.</li>
+      <li><b>Repair</b> needs power whenever the hull is damaged. Powered repair slowly restores the hull.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+(() => {
+  const COLS = 18, ROWS = 11, SPEED = 4.6, R = 0.3;
+  const $ = s => document.querySelector(s);
+  const cv = $('#room'), ctx = cv.getContext('2d');
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const fmtT = t => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+
+  const SYS = [
+    { id: 'shields', name: 'Shields', base: 6, w: 0.055, x: 2 },
+    { id: 'weapons', name: 'Weapons', base: 2, w: 0.03, x: 5 },
+    { id: 'life', name: 'Life support', base: 12, w: 0.05, x: 8 },
+    { id: 'engines', name: 'Engines', base: 14, w: 0.035, x: 11 },
+    { id: 'repair', name: 'Repair', base: 0, w: 0, x: 14 }
+  ];
+  const MAXALLOC = 40;
+  const EVENTS = [
+    { name: 'Enemy fighters attacking', dur: [14, 20], add: { shields: 22, weapons: 18 } },
+    { name: 'Asteroid field', dur: [12, 18], add: { engines: 14, shields: 12 } },
+    { name: 'Hull breach on deck 3', dur: [12, 16], add: { life: 10 }, hit: 6 },
+    { name: 'Evasive maneuvers', dur: [8, 12], add: { engines: 16 } },
+    { name: 'Torpedo lock: point defense', dur: [8, 12], add: { weapons: 20 } },
+    { name: 'Solar flare', dur: [10, 15], add: { shields: 18, life: 4 } },
+    { name: 'Boarding drones in cargo bay', dur: [10, 14], add: { weapons: 12, life: 6 } },
+    { name: 'Gravity well: full burn', dur: [10, 14], add: { engines: 20 } }
+  ];
+  const DIFF = [
+    { cap: 100, gap: [11, 17], dmg: 0.5, maxEv: 2, time: 240, warn: 6 },
+    { cap: 90, gap: [8, 14], dmg: 0.75, maxEv: 2, time: 240, warn: 5 },
+    { cap: 80, gap: [5, 10], dmg: 1, maxEv: 3, time: 270, warn: 3.5 }
+  ];
+
+  // ---------- map ----------
+  const obstacle = new Set();
+  const key = (x, y) => x + ',' + y;
+  for (let x = 7; x <= 10; x++) for (let y = 4; y <= 6; y++) obstacle.add(key(x, y));
+  const ST = [];
+  SYS.forEach(s => ST.push({ type: 'console', sys: s.id, label: s.name, tile: [s.x, 0], use: [s.x, 1] }));
+  ST.push({ type: 'breaker', label: 'Breaker panel', tile: [0, 8], use: [1, 8] });
+  ST.push({ type: 'fuelport', label: 'Fuel port', tile: [7, 5], use: [6, 5] });
+  ST.push({ type: 'coolport', label: 'Coolant port', tile: [10, 5], use: [11, 5] });
+  ST.push({ type: 'fuelrack', label: 'Fuel rack', tile: [12, 10], use: [12, 9] });
+  ST.push({ type: 'coolrack', label: 'Coolant tanks', tile: [15, 10], use: [15, 9] });
+  ST.push({ type: 'chute', label: 'Disposal chute', tile: [4, 10], use: [4, 9] });
+  ST.forEach(s => { if (!(s.type === 'fuelport' || s.type === 'coolport')) obstacle.add(key(s.tile[0], s.tile[1])); });
+  const walkable = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !obstacle.has(key(x, y));
+
+  function bfs(from, to) {
+    const q = [from], prev = new Map([[key(...from), null]]);
+    while (q.length) {
+      const c = q.shift();
+      if (c[0] === to[0] && c[1] === to[1]) break;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const n = [c[0] + dx, c[1] + dy];
+        if (!walkable(...n) || prev.has(key(...n))) continue;
+        if (dx && dy && (!walkable(c[0] + dx, c[1]) || !walkable(c[0], c[1] + dy))) continue;
+        prev.set(key(...n), c); q.push(n);
+      }
+    }
+    if (!prev.has(key(...to))) return null;
+    const path = []; let c = to;
+    while (c) { path.unshift(c); c = prev.get(key(...c)); }
+    return path.slice(1);
+  }
+
+  // ---------- state ----------
+  let G = null, diff = 1, muted = false, paused = false;
+  const keys = new Set();
+
+  function newGame() {
+    const D = DIFF[diff];
+    G = {
+      D, t: 0, jump: D.time, hull: 100, over: null,
+      p: { x: 9.5, y: 8.5, path: null, hold: null },
+      sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, tripped: false, overload: 0, grace: 0, drift: 0 }])),
+      fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3,
+      events: [], nextEvent: 5, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
+    };
+    $('#startBox').hidden = true; $('#endBox').hidden = true;
+    paused = false; $('#pause').textContent = 'Pause';
+  }
+
+  // ---------- sound ----------
+  let ac = null;
+  function tone(f, d, v, type = 'square', delay = 0) {
+    if (muted) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.02);
+    } catch (e) { /* audio unavailable */ }
+  }
+  const alarm = () => { tone(740, 0.18, 0.06); tone(520, 0.18, 0.06, 'square', 0.2); };
+  const clunk = () => tone(90, 0.25, 0.2, 'sawtooth');
+  const click = () => tone(1200, 0.05, 0.04, 'triangle');
+
+  // ---------- simulation ----------
+  function capacity() {
+    if (!G.fuelIn || G.fuel <= 0) return 0;
+    let c = G.D.cap;
+    if (!G.coolIn) c *= 0.45;
+    else if (G.cool < 25) c *= 0.5 + 0.5 * (G.cool / 25);
+    return c;
+  }
+  const allocSum = () => SYS.reduce((a, s) => a + G.sys[s.id].alloc, 0);
+  const limitOf = d => Math.max(d * 1.25, d + 4);
+
+  function step(dt) {
+    if (G.over || paused) return;
+    G.t += dt; G.jump -= dt;
+    if (G.jump <= 0) return end('win');
+
+    // events
+    G.nextEvent -= dt;
+    if (G.nextEvent <= 0 && G.events.length < G.D.maxEv) {
+      const pool = EVENTS.filter(e => !G.events.some(a => a.name === e.name));
+      const e = pool[Math.floor(Math.random() * pool.length)];
+      const ev = { name: e.name, add: e.add, left: rnd(...e.dur), eta: G.D.warn, hit: e.hit };
+      G.events.push(ev);
+      alarm();
+      const ramp = Math.max(0.55, 1 - G.t / 400);
+      G.nextEvent = rnd(...G.D.gap) * ramp;
+    } else if (G.nextEvent <= 0) G.nextEvent = 2;
+    G.events.forEach(e => {
+      if (e.eta > 0) { e.eta -= dt; if (e.eta <= 0 && e.hit) hit(e.hit * G.D.dmg, 'Breach!'); }
+      else e.left -= dt;
+    });
+    G.events = G.events.filter(e => e.left > 0);
+
+    // demand
+    SYS.forEach(s => {
+      const st = G.sys[s.id];
+      st.drift -= dt;
+      if (st.drift <= 0) { st.driftVal = s.id === 'engines' || s.id === 'life' ? Math.round(rnd(-2, 2)) : 0; st.drift = rnd(5, 9); }
+      let d = s.base + (st.driftVal || 0);
+      G.events.forEach(e => { if (e.eta <= 0) d += e.add[s.id] || 0; });
+      if (s.id === 'repair') d = G.hull < 100 ? 6 + Math.round((100 - G.hull) / 12) : 0;
+      st.demand = Math.max(0, d);
+    });
+
+    // power delivery
+    const cap = capacity(), sum = allocSum();
+    const scale = sum > 0 ? Math.min(1, cap / sum) : 1;
+    let dmg = 0;
+    SYS.forEach(s => {
+      const st = G.sys[s.id];
+      st.delivered = st.tripped ? 0 : st.alloc * scale;
+      // breaker
+      if (!st.tripped) {
+        if (st.grace > 0) st.grace -= dt;
+        else if (st.alloc > limitOf(st.demand) && st.alloc > 0) {
+          st.overload += dt;
+          if (st.overload >= 2.5) { st.tripped = true; st.overload = 0; G.trips++; clunk(); float(s.id, 'BREAKER TRIPPED'); }
+        } else st.overload = Math.max(0, st.overload - dt * 2);
+      }
+      const deficit = Math.max(0, st.demand - st.delivered);
+      if (deficit > 0.5 && s.w) { dmg += deficit * s.w; G.under += dt / SYS.length; }
+    });
+    if (dmg > 0) {
+      G.hull -= dmg * G.D.dmg * dt;
+      if (G.t - G.lastHit > 1.2 && dmg > 0.6) { G.lastHit = G.t; G.shake = 0.25; tone(60, 0.2, 0.12, 'sine'); }
+    }
+    const rep = G.sys.repair.delivered || 0;
+    if (G.hull < 100 && rep > 0) G.hull = Math.min(100, G.hull + rep * 0.07 * dt);
+    if (G.hull <= 0) { G.hull = 0; return end('lose'); }
+
+    // reactor consumption
+    const out = Math.min(cap, sum);
+    if (G.fuelIn) G.fuel = Math.max(0, G.fuel - out * 0.0105 * dt);
+    if (G.coolIn) G.cool = Math.max(0, G.cool - out * 0.0125 * dt);
+
+    // player movement
+    movePlayer(dt);
+    G.floats.forEach(f => f.t -= dt); G.floats = G.floats.filter(f => f.t > 0);
+    G.shake = Math.max(0, G.shake - dt);
+  }
+
+  function hit(n, label) { G.hull -= n; G.shake = 0.4; tone(55, 0.4, 0.2, 'sine'); float(null, label); }
+  function float(sysId, text) {
+    const s = sysId ? SYS.find(x => x.id === sysId) : null;
+    G.floats.push({ x: s ? s.x + 0.5 : 9, y: s ? 1.6 : 7.5, text, t: 1.8 });
+  }
+
+  function movePlayer(dt) {
+    const p = G.p;
+    let vx = 0, vy = 0;
+    if (keys.has('left')) vx -= 1; if (keys.has('right')) vx += 1;
+    if (keys.has('up')) vy -= 1; if (keys.has('down')) vy += 1;
+    if (vx || vy) { p.path = null; const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
+    else if (p.path && p.path.length) {
+      const [tx, ty] = p.path[0]; const cx = tx + 0.5, cy = ty + 0.5;
+      const dx = cx - p.x, dy = cy - p.y, d = Math.hypot(dx, dy);
+      if (d < 0.08) { p.path.shift(); return; }
+      vx = dx / d; vy = dy / d;
+      const stepLen = Math.min(d, SPEED * dt);
+      p.x += vx * stepLen; p.y += vy * stepLen; return;
+    }
+    const nx = p.x + vx * SPEED * dt, ny = p.y + vy * SPEED * dt;
+    if (free(nx, p.y)) p.x = nx;
+    if (free(p.x, ny)) p.y = ny;
+  }
+  function free(x, y) {
+    for (const [ox, oy] of [[-R, -R], [R, -R], [-R, R], [R, R]]) if (!walkable(Math.floor(x + ox), Math.floor(y + oy))) return false;
+    return true;
+  }
+  function nearStation() {
+    let best = null, bd = 0.85;
+    ST.forEach(s => { const d = Math.hypot(G.p.x - (s.use[0] + 0.5), G.p.y - (s.use[1] + 0.5)); if (d < bd) { bd = d; best = s; } });
+    return best;
+  }
+
+  // ---------- actions ----------
+  let msgT = 0, msg = '';
+  function say(m) { msg = m; msgT = 2.2; }
+  function adjust(delta) {
+    if (!G || G.over || paused) return;
+    const s = nearStation(); if (!s || s.type !== 'console') return;
+    const st = G.sys[s.sys];
+    const room = capacity() - (allocSum() - st.alloc);
+    let v = clamp(st.alloc + delta, 0, MAXALLOC);
+    if (delta > 0 && v > room) { v = Math.max(st.alloc, Math.floor(room)); if (v === st.alloc) say('Reactor at full allocation. Take power from another system.'); }
+    st.alloc = v; click();
+  }
+  function matchLoad() {
+    if (!G || G.over || paused) return;
+    const s = nearStation(); if (!s || s.type !== 'console') return;
+    const st = G.sys[s.sys];
+    const want = Math.ceil(st.demand) + (st.demand > 0 ? 1 : 0);
+    adjust(want - st.alloc);
+  }
+  function use() {
+    if (!G || G.over || paused) return;
+    const s = nearStation(); if (!s) return;
+    const p = G.p;
+    switch (s.type) {
+      case 'breaker': {
+        const t = SYS.filter(x => G.sys[x.id].tripped);
+        if (!t.length) { say('All breakers closed.'); return; }
+        t.forEach(x => { const st = G.sys[x.id]; st.tripped = false; st.grace = 1.5; st.overload = 0; });
+        clunk(); say('Reset: ' + t.map(x => x.name).join(', ') + '.');
+        return;
+      }
+      case 'fuelport':
+        if (p.hold === 'freshFuel' && !G.fuelIn) { G.fuelIn = true; G.fuel = 100; p.hold = null; say('Fresh rod loaded. Reactor online.'); click(); return; }
+        if (!p.hold && G.fuelIn) {
+          if (G.fuel > 40) { say(`Rod still at ${Math.round(G.fuel)}%. Eject below 40%.`); return; }
+          G.fuelIn = false; G.fuel = 0; p.hold = 'spentFuel'; say('Spent rod ejected. Reactor offline until you load a fresh one!'); clunk(); return;
+        }
+        if (p.hold === 'freshFuel') say('Eject the spent rod first.'); else if (p.hold) say('Your hands are full.'); else say('No rod loaded. Bring a fresh one from the fuel rack.');
+        return;
+      case 'coolport':
+        if (p.hold === 'freshCool' && !G.coolIn) { G.coolIn = true; G.cool = 100; p.hold = null; say('Fresh coolant connected.'); click(); return; }
+        if (!p.hold && G.coolIn) {
+          if (G.cool > 40) { say(`Coolant still at ${Math.round(G.cool)}%. Swap below 40%.`); return; }
+          G.coolIn = false; G.cool = 0; p.hold = 'spentCool'; say('Spent coolant out. Output limited until you connect fresh coolant!'); clunk(); return;
+        }
+        if (p.hold === 'freshCool') say('Remove the spent canister first.'); else if (p.hold) say('Your hands are full.'); else say('No canister connected. Bring one from the coolant tanks.');
+        return;
+      case 'fuelrack':
+        if (!p.hold) { if (G.spareFuel > 0) { G.spareFuel--; p.hold = 'freshFuel'; say('Picked up a fresh fuel rod.'); click(); } else say('No spare rods left.'); return; }
+        if (p.hold === 'freshFuel') { G.spareFuel++; p.hold = null; say('Rod returned to the rack.'); return; }
+        say('Spent items go in the disposal chute.'); return;
+      case 'coolrack':
+        if (!p.hold) { if (G.spareCool > 0) { G.spareCool--; p.hold = 'freshCool'; say('Picked up a fresh coolant canister.'); click(); } else say('No spare coolant left.'); return; }
+        if (p.hold === 'freshCool') { G.spareCool++; p.hold = null; say('Canister returned.'); return; }
+        say('Spent items go in the disposal chute.'); return;
+      case 'chute':
+        if (p.hold === 'spentFuel' || p.hold === 'spentCool') { say(p.hold === 'spentFuel' ? 'Spent rod disposed.' : 'Spent coolant disposed.'); p.hold = null; tone(200, 0.3, 0.08, 'triangle'); }
+        else say('Nothing to dispose of.');
+        return;
+      case 'console':
+        matchLoad(); return;
+    }
+  }
+
+  function end(result) {
+    G.over = result;
+    const p = $('#endPanel'); p.innerHTML = '';
+    const h = document.createElement('h2'); h.className = result;
+    h.textContent = result === 'win' ? 'Jump complete' : 'Ship lost';
+    const t = document.createElement('p');
+    t.textContent = result === 'win'
+      ? `The jump drive fired with the hull at ${Math.round(G.hull)}%. The bridge sends its thanks to engineering.`
+      : `The hull gave out with ${fmtT(G.jump)} left on the jump drive.`;
+    const s = document.createElement('div'); s.className = 'stats';
+    s.textContent = `Shift ${fmtT(G.t)} · Breakers tripped ${G.trips} · Systems short of power ${Math.round(G.under)} s`;
+    const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'New shift'; b.addEventListener('click', () => { newGame(); });
+    const c = document.createElement('button'); c.className = 'btn'; c.textContent = 'Change difficulty'; c.addEventListener('click', () => { $('#endBox').hidden = true; $('#startBox').hidden = false; });
+    const row = document.createElement('div'); row.className = 'seg'; row.append(b, c);
+    p.append(h, t, s, row);
+    $('#endBox').hidden = false;
+    tone(result === 'win' ? 880 : 70, 0.8, 0.12, result === 'win' ? 'sine' : 'sawtooth');
+  }
+
+  // ---------- drawing ----------
+  let W = 800, H = 500, ts = 40, ox = 20, oy = 20;
+  function resize() {
+    W = cv.clientWidth || 800;
+    ts = W / (COLS + 1); ox = oy = ts * 0.5; H = Math.round(ts * (ROWS + 1));
+    cv.style.height = H + 'px';
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const TX = x => ox + x * ts, TY = y => oy + y * ts;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let COL = {};
+  function readColors() { ['--c-shields', '--c-weapons', '--c-life', '--c-engines', '--c-repair', '--hazard', '--bad', '--good', '--fg', '--muted', '--line'].forEach(n => COL[n.replace('--', '')] = css(n)); }
+  const sysColor = id => COL['c-' + id];
+  function rgba(hex, a) { const n = parseInt(hex.replace('#', ''), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+
+  function draw(now) {
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    if (G && G.shake > 0) ctx.translate((Math.random() - .5) * 6 * G.shake / .4, (Math.random() - .5) * 6 * G.shake / .4);
+    // walls
+    ctx.fillStyle = '#1c242d'; ctx.fillRect(0, 0, W, H);
+    for (let i = -H; i < W; i += 18) { ctx.strokeStyle = 'rgba(242,160,61,.06)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + H, H); ctx.stroke(); }
+    // floor
+    ctx.fillStyle = '#141a20'; ctx.fillRect(TX(0), TY(0), COLS * ts, ROWS * ts);
+    for (let x = 0; x < COLS; x++) for (let y = 0; y < ROWS; y++) {
+      ctx.strokeStyle = 'rgba(255,255,255,.04)'; ctx.lineWidth = 1; ctx.strokeRect(TX(x) + .5, TY(y) + .5, ts - 1, ts - 1);
+      if ((x + y) % 2 === 0) { ctx.fillStyle = 'rgba(255,255,255,.012)'; ctx.fillRect(TX(x), TY(y), ts, ts); }
+    }
+    if (!G) { ctx.restore(); return; }
+
+    const cap = capacity();
+    // power cables from reactor to consoles
+    const rc = { x: TX(9), y: TY(5.5) };
+    SYS.forEach((s, i) => {
+      const st = G.sys[s.id], col = sysColor(s.id);
+      const tx = TX(s.x + 0.5), ty = TY(0.85);
+      const lvl = clamp((st.delivered || 0) / 30, 0, 1);
+      ctx.strokeStyle = rgba(col, 0.15 + 0.5 * lvl); ctx.lineWidth = Math.max(2, ts * 0.08);
+      ctx.setLineDash(st.delivered > 0 ? [ts * 0.25, ts * 0.2] : []);
+      ctx.lineDashOffset = -(now / 1000) * ts * (0.5 + lvl * 2);
+      ctx.beginPath(); ctx.moveTo(rc.x + (i - 2) * ts * 0.25, TY(4)); ctx.lineTo(rc.x + (i - 2) * ts * 0.25, TY(2.4)); ctx.lineTo(tx, TY(2.4)); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // reactor
+    const heat = G.coolIn ? 1 - G.cool / 100 : 1;
+    rr(TX(7) + 3, TY(4) + 3, ts * 4 - 6, ts * 3 - 6, ts * 0.3); ctx.fillStyle = '#26303a'; ctx.fill(); ctx.strokeStyle = '#3c4a57'; ctx.lineWidth = 2; ctx.stroke();
+    const pulse = 0.75 + 0.25 * Math.sin(now / 300);
+    const coreCol = !G.fuelIn || G.fuel <= 0 ? '#3a3f46' : heat > 0.75 ? COL.bad : heat > 0.5 ? COL.hazard : COL['c-shields'];
+    const grd = ctx.createRadialGradient(rc.x, rc.y, 2, rc.x, rc.y, ts * 1.3);
+    grd.addColorStop(0, rgba(coreCol, cap > 0 ? 0.95 * pulse : 0.4)); grd.addColorStop(1, rgba(coreCol, 0));
+    ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(rc.x, rc.y, ts * 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = rgba(coreCol, .9); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(rc.x, rc.y, ts * 0.7, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = COL.fg; ctx.font = `700 ${Math.max(10, ts * 0.3)}px Oxanium, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(cap) + ' MW', rc.x, rc.y);
+    // gauges on reactor
+    gauge(TX(7) + ts * 0.2, TY(4.3), ts * 0.25, ts * 2.4, G.fuelIn ? G.fuel / 100 : 0, '#c8e64c');
+    gauge(TX(11) - ts * 0.45, TY(4.3), ts * 0.25, ts * 2.4, G.coolIn ? G.cool / 100 : 0, COL['c-shields']);
+
+    // stations
+    const near = nearStation();
+    ST.forEach(s => drawStation(s, s === near, now));
+
+    // floats
+    G.floats.forEach(f => {
+      ctx.globalAlpha = clamp(f.t, 0, 1);
+      ctx.fillStyle = COL.bad; ctx.font = `800 ${Math.max(11, ts * 0.32)}px Oxanium, sans-serif`; ctx.textAlign = 'center';
+      ctx.fillText(f.text, TX(f.x), TY(f.y) - (1.8 - f.t) * ts * 0.4);
+      ctx.globalAlpha = 1;
+    });
+
+    // path preview
+    if (G.p.path && G.p.path.length) {
+      ctx.strokeStyle = rgba(COL.hazard, .35); ctx.setLineDash([4, 6]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(TX(G.p.x), TY(G.p.y));
+      G.p.path.forEach(([x, y]) => ctx.lineTo(TX(x + .5), TY(y + .5))); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // player
+    const px = TX(G.p.x), py = TY(G.p.y);
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(px, py + ts * 0.22, ts * 0.3, ts * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = COL.hazard; ctx.beginPath(); ctx.arc(px, py, ts * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#20262d'; ctx.beginPath(); ctx.arc(px, py - ts * 0.04, ts * 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9fd8ff'; ctx.fillRect(px - ts * 0.1, py - ts * 0.09, ts * 0.2, ts * 0.06);
+    if (G.p.hold) drawItem(px + ts * 0.3, py - ts * 0.3, G.p.hold, ts * 0.5);
+    ctx.restore();
+  }
+
+  function gauge(x, y, w, h, v, col) {
+    ctx.fillStyle = '#0d1217'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = v < 0.25 ? COL.bad : col; ctx.fillRect(x, y + h * (1 - v), w, h * v);
+    ctx.strokeStyle = '#3c4a57'; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  }
+
+  function drawItem(x, y, kind, size) {
+    const fuel = kind.includes('Fuel'), spent = kind.startsWith('spent');
+    ctx.save(); ctx.translate(x, y);
+    if (fuel) { rr(-size * 0.12, -size * 0.45, size * 0.24, size * 0.9, size * 0.08); ctx.fillStyle = spent ? '#5b5f3a' : '#c8e64c'; ctx.fill(); }
+    else { rr(-size * 0.25, -size * 0.35, size * 0.5, size * 0.7, size * 0.15); ctx.fillStyle = spent ? '#3b5361' : COL['c-shields']; ctx.fill(); }
+    ctx.strokeStyle = '#0d1217'; ctx.lineWidth = 1.5; ctx.stroke();
+    if (spent) { ctx.strokeStyle = COL.bad; ctx.beginPath(); ctx.moveTo(-size * .2, -size * .2); ctx.lineTo(size * .2, size * .2); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  function drawStation(s, hl, now) {
+    const [tx, ty] = s.tile, x = TX(tx), y = TY(ty);
+    ctx.font = `600 ${Math.max(9, ts * 0.24)}px Barlow, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (s.type === 'console') {
+      const st = G.sys[s.sys], col = sysColor(s.sys);
+      rr(x + 2, y + 2, ts - 4, ts - 4, 5); ctx.fillStyle = '#2a343e'; ctx.fill();
+      ctx.strokeStyle = hl ? COL.hazard : st.tripped ? COL.bad : '#3c4a57'; ctx.lineWidth = hl ? 3 : 1.5; ctx.stroke();
+      // screen meter: alloc vs demand
+      const mx = x + ts * 0.15, mw = ts * 0.7, my = y + ts * 0.18, mh = ts * 0.22;
+      ctx.fillStyle = '#0d1217'; ctx.fillRect(mx, my, mw, mh);
+      const sc = v => clamp(v / MAXALLOC, 0, 1) * mw;
+      ctx.fillStyle = st.tripped ? '#3a3f46' : col; ctx.fillRect(mx, my, sc(st.alloc), mh);
+      ctx.fillStyle = COL.fg; ctx.fillRect(mx + sc(st.demand) - 1, my - 2, 2, mh + 4);
+      // status light
+      const deficit = st.demand - (st.delivered || 0) > 0.5;
+      const lc = st.tripped ? COL.bad : st.overload > 0 ? COL.hazard : deficit ? COL.bad : COL.good;
+      const blink = (st.tripped || st.overload > 0 || deficit) ? (Math.sin(now / 120) > 0 ? 1 : 0.3) : 1;
+      ctx.fillStyle = rgba(lc, blink); ctx.beginPath(); ctx.arc(x + ts * 0.5, y + ts * 0.66, ts * 0.1, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = col; ctx.fillText(s.label.toUpperCase(), x + ts * 0.5, y + ts * 1.25);
+      return;
+    }
+    if (s.type === 'breaker') {
+      rr(x + 3, y - ts * 0.9, ts - 6, ts * 2.4, 5); ctx.fillStyle = '#2a343e'; ctx.fill();
+      ctx.strokeStyle = hl ? COL.hazard : '#3c4a57'; ctx.lineWidth = hl ? 3 : 1.5; ctx.stroke();
+      SYS.forEach((sy, i) => {
+        const st = G.sys[sy.id];
+        const by = y - ts * 0.75 + i * ts * 0.44;
+        ctx.fillStyle = '#0d1217'; ctx.fillRect(x + ts * 0.2, by, ts * 0.6, ts * 0.32);
+        const c = st.tripped ? COL.bad : st.overload > 0 ? COL.hazard : COL.good;
+        ctx.fillStyle = c; ctx.fillRect(st.tripped ? x + ts * 0.22 : x + ts * 0.5, by + 2, ts * 0.28, ts * 0.32 - 4);
+      });
+      ctx.save(); ctx.translate(x + ts * 1.1, y + ts * 0.3); ctx.fillStyle = COL.muted; ctx.textAlign = 'left'; ctx.fillText('BREAKERS', 0, 0); ctx.restore();
+      return;
+    }
+    if (s.type === 'fuelport' || s.type === 'coolport') {
+      const left = s.type === 'fuelport';
+      const cx = left ? TX(7) + 2 : TX(11) - 2, cy = TY(5.5);
+      ctx.fillStyle = hl ? COL.hazard : '#56636f'; rr(cx - (left ? 0 : ts * 0.22), cy - ts * 0.3, ts * 0.22, ts * 0.6, 3); ctx.fill();
+      ctx.fillStyle = COL.muted; ctx.fillText(left ? 'FUEL' : 'COOLANT', TX(s.use[0] + 0.5), TY(s.use[1] + 1.05));
+      return;
+    }
+    rr(x + 3, y + 3, ts - 6, ts - 6, 5); ctx.fillStyle = '#2a343e'; ctx.fill();
+    ctx.strokeStyle = hl ? COL.hazard : '#3c4a57'; ctx.lineWidth = hl ? 3 : 1.5; ctx.stroke();
+    if (s.type === 'fuelrack') for (let i = 0; i < 3; i++) if (i < G.spareFuel) drawItem(x + ts * (0.28 + i * 0.22), y + ts * 0.5, 'freshFuel', ts * 0.55);
+    if (s.type === 'coolrack') for (let i = 0; i < 3; i++) if (i < G.spareCool) drawItem(x + ts * (0.25 + i * 0.25), y + ts * 0.5, 'freshCool', ts * 0.4);
+    if (s.type === 'chute') {
+      for (let i = 0; i < 5; i++) { ctx.fillStyle = i % 2 ? '#111' : COL.hazard; ctx.fillRect(x + 6 + i * (ts - 12) / 5, y + 6, (ts - 12) / 5, ts - 12); }
+      ctx.fillStyle = '#05080b'; ctx.fillRect(x + ts * 0.3, y + ts * 0.3, ts * 0.4, ts * 0.4);
+    }
+    ctx.fillStyle = COL.muted; ctx.fillText(s.label.toUpperCase(), x + ts * 0.5, y - ts * 0.18);
+  }
+
+  // ---------- HUD ----------
+  const sysEls = {};
+  function buildHUD() {
+    const box = $('#systems'); box.innerHTML = '';
+    SYS.forEach(s => {
+      const d = document.createElement('div'); d.className = 'sys';
+      d.innerHTML = `<span class="dot" style="background:var(--c-${s.id})"></span><span class="nm">${s.name}</span><span class="nums"></span><div class="meter"><i style="background:var(--c-${s.id})"></i><span class="dm"></span></div>`;
+      box.append(d);
+      sysEls[s.id] = { nums: d.querySelector('.nums'), bar: d.querySelector('.meter i'), dm: d.querySelector('.dm') };
+    });
+  }
+  function chipFor(st) {
+    if (st.tripped) return '<span class="chip trip">TRIPPED</span>';
+    if (st.overload > 0) return '<span class="chip warn">OVERLOAD</span>';
+    if (st.demand - (st.delivered || 0) > 0.5) return '<span class="chip low">LOW</span>';
+    return '<span class="chip ok">OK</span>';
+  }
+  let lastStation = undefined;
+  function hud() {
+    if (!G) return;
+    $('#jump').textContent = fmtT(G.jump);
+    $('#hullTxt').textContent = Math.max(0, Math.round(G.hull)) + '%';
+    const hb = $('#hullBar'); hb.style.width = clamp(G.hull, 0, 100) + '%';
+    hb.style.background = G.hull < 30 ? 'var(--bad)' : G.hull < 60 ? 'var(--hazard)' : 'var(--good)';
+    const al = $('#alerts');
+    al.innerHTML = G.events.length ? G.events.map(e => e.eta > 0 ? `<li class="soon">${e.name}<span>in ${Math.ceil(e.eta)}s</span></li>` : `<li>${e.name}<span>${Math.ceil(e.left)}s left</span></li>`).join('') : '<li class="none">No active threats</li>';
+    SYS.forEach(s => {
+      const st = G.sys[s.id], e = sysEls[s.id];
+      e.nums.innerHTML = `${Math.round(st.delivered || 0)} / ${Math.round(st.demand)} ${chipFor(st)}`;
+      e.bar.style.width = (clamp((st.delivered || 0) / MAXALLOC, 0, 1) * 100) + '%';
+      e.dm.style.left = `calc(${clamp(st.demand / MAXALLOC, 0, 1) * 100}% - 1px)`;
+    });
+    const cap = capacity();
+    $('#r-cap').textContent = Math.round(cap) + ' MW';
+    $('#r-alloc').textContent = Math.round(allocSum()) + ' MW';
+    $('#r-fuel').textContent = G.fuelIn ? Math.round(G.fuel) + '%' : 'EMPTY';
+    $('#r-cool').textContent = G.coolIn ? Math.round(G.cool) + '%' : 'NONE';
+    $('#r-fuelBar').style.width = (G.fuelIn ? G.fuel : 0) + '%';
+    $('#r-fuelBar').style.background = G.fuel < 25 || !G.fuelIn ? 'var(--bad)' : '#c8e64c';
+    $('#r-coolBar').style.width = (G.coolIn ? G.cool : 0) + '%';
+    $('#r-coolBar').style.background = G.cool < 25 || !G.coolIn ? 'var(--bad)' : 'var(--c-shields)';
+    $('#r-spares').textContent = `${G.spareFuel} rods · ${G.spareCool} coolant`;
+    // station card
+    const s = nearStation();
+    const card = $('#stationCard');
+    const sig = s ? s.type + (s.sys || '') : null;
+    if (sig !== lastStation) { lastStation = sig; buildStationCard(s); }
+    if (s && s.type === 'console') {
+      const st = G.sys[s.sys];
+      card.querySelector('.readout').innerHTML = `${st.alloc}<small>needs ${Math.round(st.demand)} · max safe ${Math.floor(limitOf(st.demand))}</small>`;
+      card.querySelector('.state').innerHTML = chipFor(st) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum()))} MW</span>`;
+    }
+    // prompt
+    let pr = '';
+    if (msgT > 0) pr = msg;
+    else if (!G.over) {
+      if (G.fuelIn && G.fuel < 25) pr = 'Fuel rod low. Swap it at the fuel port.';
+      else if (G.coolIn && G.cool < 25) pr = 'Coolant low. Reactor output is dropping.';
+      else if (!G.fuelIn) pr = 'Reactor offline. Load a fresh fuel rod.';
+      else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel.';
+    }
+    $('#prompt').textContent = pr;
+  }
+  function buildStationCard(s) {
+    const card = $('#stationCard');
+    if (!s || !G || G.over) { card.hidden = true; return; }
+    card.hidden = false; card.innerHTML = '';
+    const t = document.createElement('div'); t.className = 'title'; t.textContent = s.label; card.append(t);
+    if (s.type === 'console') {
+      card.insertAdjacentHTML('beforeend', `<div class="ctrl"><button id="dn" aria-label="Lower power">−</button><div class="readout"></div><button id="up" aria-label="Raise power">+</button></div><div class="state"></div><div class="seg"><button class="btn" id="match">Match load</button></div><div class="hint"><kbd>Q</kbd> lower · <kbd>E</kbd> raise · <kbd>R</kbd> or <kbd>Space</kbd> match load</div>`);
+      hold(card.querySelector('#dn'), () => adjust(-1));
+      hold(card.querySelector('#up'), () => adjust(1));
+      card.querySelector('#match').addEventListener('click', matchLoad);
+    } else {
+      const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item' };
+      const b = document.createElement('button'); b.className = 'btn'; b.textContent = labels[s.type]; b.addEventListener('click', use);
+      const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = 'or press <kbd>Space</kbd>';
+      card.append(b, h);
+    }
+  }
+  function hold(btn, fn) {
+    let iv = null, to = null;
+    const stop = () => { clearTimeout(to); clearInterval(iv); };
+    btn.addEventListener('pointerdown', e => { e.preventDefault(); fn(); to = setTimeout(() => iv = setInterval(fn, 70), 300); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+  }
+
+  // ---------- loop ----------
+  let last = performance.now(), hudT = 0;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (G) step(dt);
+    if (msgT > 0) msgT -= dt;
+    draw(now);
+    hudT -= dt; if (hudT <= 0) { hud(); hudT = 0.08; }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- input ----------
+  const DIRS = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Enter' && !$('#startBox').hidden) { e.preventDefault(); newGame(); return; }
+    if (!G || G.over) return;
+    if (DIRS[e.code]) { keys.add(DIRS[e.code]); e.preventDefault(); return; }
+    if (e.code === 'KeyQ' || e.code === 'Minus') { adjust(-1); e.preventDefault(); }
+    else if (e.code === 'KeyE' || e.code === 'Equal') { adjust(1); e.preventDefault(); }
+    else if (e.code === 'KeyR') { matchLoad(); e.preventDefault(); }
+    else if ((e.code === 'Space' || e.code === 'KeyF') && !e.repeat) { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); use(); }
+    else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  });
+  document.addEventListener('keyup', e => { if (DIRS[e.code]) keys.delete(DIRS[e.code]); });
+  window.addEventListener('blur', () => keys.clear());
+  cv.addEventListener('pointerdown', e => {
+    if (!G || G.over || paused) return;
+    const r = cv.getBoundingClientRect();
+    const tx = Math.floor((e.clientX - r.left - ox) / ts), ty = Math.floor((e.clientY - r.top - oy) / ts);
+    let target = null;
+    const st = ST.find(s => (s.tile[0] === tx && s.tile[1] === ty) || (s.use[0] === tx && s.use[1] === ty) || (s.type === 'breaker' && tx === 0 && Math.abs(ty - 8) <= 1));
+    if (st) target = st.use;
+    else if (tx >= 7 && tx <= 10 && ty >= 4 && ty <= 6) target = tx <= 8 ? [6, 5] : [11, 5];
+    else if (walkable(tx, ty)) target = [tx, ty];
+    if (!target) return;
+    const from = [Math.floor(G.p.x), Math.floor(G.p.y)];
+    const path = bfs(from, target);
+    if (path) G.p.path = path;
+  });
+  function togglePause() { if (!G || G.over) return; paused = !paused; $('#pause').textContent = paused ? 'Resume' : 'Pause'; if (paused) { msg = 'Paused. Press P to resume.'; msgT = 9999; } else msgT = 0; }
+  $('#pause').addEventListener('click', togglePause);
+  $('#mute').addEventListener('click', () => { muted = !muted; $('#mute').textContent = muted ? 'Sound off' : 'Sound on'; $('#mute').setAttribute('aria-pressed', String(muted)); });
+  document.querySelectorAll('#diff .btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#diff .btn').forEach(x => x.setAttribute('aria-pressed', String(x === b))); diff = Number(b.dataset.v);
+  }));
+  $('#start').addEventListener('click', newGame);
+
+  readColors(); buildHUD();
+  // preview state behind the start screen
+  G = null;
+  const preview = () => { newGame(); $('#startBox').hidden = false; paused = true; msgT = 0; };
+  preview();
+  if (window.ResizeObserver) new ResizeObserver(resize).observe($('#stage')); else window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
