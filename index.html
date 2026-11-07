@@ -79,6 +79,7 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .alerts .scan { background: color-mix(in srgb, var(--muted) 12%, transparent); border-left-color: var(--muted); }
 .alerts li small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
 .alerts .part { background: color-mix(in srgb, var(--c-repair) 10%, transparent); border-left-color: var(--c-repair); font-weight: 500; }
+.alerts .spool { background: color-mix(in srgb, var(--c-engines) 14%, transparent); border-left-color: var(--c-engines); }
 .alerts .none { background: transparent; border-left-color: var(--line); color: var(--muted); font-weight: 400; }
 
 .systems { display: flex; flex-direction: column; gap: 8px; }
@@ -141,6 +142,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
           <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel.</li>
           <li>Too little power and the ship takes damage. Watch the ship to see it happen.</li>
           <li>Swap spent fuel rods and coolant before they run dry.</li>
+          <li>Halfway through, an enemy fleet attacks. At the end, the jump drive needs full engine power to charge.</li>
           <li>Damaged ship parts come down the cargo lift. Fix them in the repair bay while the reactor has power to spare.</li>
         </ul>
         <div class="seg" id="diff">
@@ -184,6 +186,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     <ul>
       <li><b>Consoles</b> along the back wall set power for Shields, Weapons, Life support, Engines and Repair. On each console screen the bar is the power you set and the white mark is what the system needs right now.</li>
       <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan and get to the right console.</li>
+      <li><b>The shift.</b> The first minute is calm. Partway through, sensors pick up an enemy fleet well before it arrives, and things go quiet beforehand. Use the lull to refuel, finish repairs and set your power. The fleet attacks in three waves, each needing different power. Afterwards you get a short breather. In the last 40 seconds the jump drive spools: engines need 18 MW extra, and the drive only charges as fast as the engines are powered.</li>
       <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the console says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel.</li>
       <li><b>Listen.</b> The reactor hum rises with load and spins down if it goes offline. A buzz means a breaker is about to trip. If the air vents go quiet, life support is short of power. A sonar ping is an unknown contact; a two-tone klaxon means the hull is below 40%. The jump drive whines louder as it nears full charge.</li>
       <li><b>Reactor.</b> Total allocation can't exceed reactor output. Low coolant cuts output; an empty fuel rod shuts it down.</li>
@@ -227,11 +230,23 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     { type: 'drones', name: 'Boarding drones on the hull', hint: 'Small objects pacing us', dur: [12, 16], add: { weapons: 12, life: 6 }, parts: ['weapons'] },
     { type: 'gravity', name: 'Gravity well: full burn', hint: 'Gravitational anomaly ahead', dur: [12, 16], add: { engines: 20 }, parts: ['engines'] }
   ];
+  // the shift's set piece: a fleet attack ~60% through, announced well ahead, fought in three waves
+  const CRISIS = {
+    type: 'fleet', name: 'Enemy fleet engaging', hint: 'Capital-ship signature, many escorts', scan: 14, warn: 12, dur: 36, at: 0.6,
+    parts: ['shields', 'weapons', 'engines'],
+    waves: [
+      { at: 0, add: { shields: 20, weapons: 16 }, say: 'First wave: escorts inbound' },
+      { at: 12, add: { shields: 26, weapons: 22, engines: 8 }, say: 'Second wave: the cruiser is firing' },
+      { at: 24, add: { shields: 18, weapons: 24, life: 6 }, say: 'Third wave: boarding torpedoes' }
+    ]
+  };
+  const MILD = ['evasive', 'flare', 'drones', 'asteroids']; // the opening minute only draws from these
+  const SPOOL = 40, QUIET = 45, BREATHER = 30; // seconds: jump spool at the end, hush before the fleet, rest after it
   // scan: seconds as an unknown contact; warn: countdown once identified; brk: base chance a part breaks; fix: seconds to repair at full bay power
   const DIFF = [
-    { cap: 100, gap: [30, 40], dmg: 0.5, maxEv: 1, time: 270, scan: 9, warn: 10, brk: 0.3, fix: 16 },
-    { cap: 90, gap: [24, 32], dmg: 0.75, maxEv: 2, time: 300, scan: 8, warn: 8, brk: 0.4, fix: 20 },
-    { cap: 80, gap: [18, 26], dmg: 1, maxEv: 2, time: 330, scan: 6, warn: 6, brk: 0.5, fix: 24 }
+    { cap: 100, gap: [30, 40], dmg: 0.5, maxEv: 1, time: 270, scan: 9, warn: 10, brk: 0.3, fix: 16, crisis: 0.75 },
+    { cap: 90, gap: [24, 32], dmg: 0.75, maxEv: 2, time: 300, scan: 8, warn: 8, brk: 0.4, fix: 20, crisis: 0.9 },
+    { cap: 80, gap: [18, 26], dmg: 1, maxEv: 2, time: 330, scan: 6, warn: 6, brk: 0.5, fix: 24, crisis: 1 }
   ];
 
   // ---------- map ----------
@@ -282,7 +297,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, delivered: 0, tripped: false, overload: 0, grace: 0, drift: 0, damaged: false }])),
       fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3,
       lift: [], bay: { part: null, done: false }, prog: { shields: 0, weapons: 0, engines: 0 }, bayPow: 0, fixed: 0,
-      events: [], nextEvent: 10, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
+      crisis: null, spool: false, breatherUntil: 0,
+      events: [], nextEvent: 25, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
     };
     resetFX();
     $('#startBox').hidden = true; $('#endBox').hidden = true;
@@ -397,12 +413,29 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   function step(dt) {
     if (G.over || paused) return;
-    G.t += dt; G.jump -= dt;
+    G.t += dt;
+    // during the spool the drive only charges as fast as the engines are powered
+    const spooling = G.events.some(e => e.type === 'spool' && e.eta <= 0);
+    G.jump -= dt * (spooling ? clamp(ratio('engines'), 0, 1) : 1);
     if (G.jump <= 0) return end('win');
 
+    // shift structure: calm opening, patrol, a hush, the fleet, a breather, then the jump spool
+    const tC = G.D.time * CRISIS.at;
+    if (!G.crisis && G.t >= tC - CRISIS.scan - CRISIS.warn) {
+      G.crisis = 'coming';
+      G.events.push({ type: 'fleet', name: CRISIS.name, hint: CRISIS.hint, add: waveAdd(0), parts: CRISIS.parts, left: CRISIS.dur, scan: CRISIS.scan, eta: CRISIS.warn, warn0: CRISIS.warn, act: 0, short: 0, ping: 2.5, wave: 0, beat: 0 });
+      ping(); say('Long-range sensors: something big is out there.');
+    }
+    if (!G.spool && G.jump <= SPOOL + G.D.warn) {
+      G.spool = true;
+      G.events.push({ type: 'spool', name: 'Jump drive spooling', add: { engines: 18 }, parts: [], left: Infinity, scan: 0, eta: G.D.warn, warn0: G.D.warn, act: 0, short: 0 });
+      alarm(); say(`Bridge: spooling the jump drive in ${G.D.warn}s. Engines to full; it only charges as fast as they are powered.`);
+    }
+    const hold = (G.t >= tC - QUIET - 25 && G.crisis !== 'done') || G.t < G.breatherUntil; // stop early so running alerts clear before the hush
     G.nextEvent -= dt;
-    if (G.nextEvent <= 0 && G.events.length < G.D.maxEv) {
-      const pool = EVENTS.filter(e => !G.events.some(a => a.name === e.name));
+    if (G.nextEvent <= 0 && hold) G.nextEvent = rnd(4, 8);
+    else if (G.nextEvent <= 0 && G.events.length < G.D.maxEv) {
+      const pool = EVENTS.filter(e => (G.t >= 60 || MILD.includes(e.type)) && !G.events.some(a => a.name === e.name));
       const e = pool[Math.floor(Math.random() * pool.length)];
       G.events.push({ type: e.type, name: e.name, hint: e.hint, add: e.add, parts: e.parts, left: rnd(...e.dur), scan: G.D.scan, eta: G.D.warn, warn0: G.D.warn, hit: e.hit, act: 0, short: 0, ping: 2.5 });
       ping();
@@ -412,13 +445,24 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (e.scan > 0) {
         e.scan -= dt; e.ping -= dt;
         if (e.scan <= 0) alarm(); else if (e.ping <= 0) { e.ping = 2.5; ping(); }
-      } else if (e.eta > 0) { e.eta -= dt; if (e.eta <= 0 && e.hit) hit(e.hit * G.D.dmg, 'BREACH!'); }
-      else {
+      } else if (e.eta > 0) {
+        e.eta -= dt;
+        if (e.type === 'fleet') { e.beat -= dt; if (e.beat <= 0) { e.beat = 0.6 + 0.6 * e.eta / e.warn0; tone(50, 0.35, 0.12, 'sine'); } } // heartbeat, quickening
+        if (e.eta <= 0 && e.hit) hit(e.hit * G.D.dmg, 'BREACH!');
+        if (e.eta <= 0 && e.type === 'fleet') { G.crisis = 'fighting'; say('Bridge: ' + CRISIS.waves[0].say + '!'); }
+      } else {
         e.left -= dt; e.act += dt;
         if (e.parts.some(id => G.sys[id].demand - G.sys[id].delivered > 0.5)) e.short += dt;
+        const nw = e.type === 'fleet' ? CRISIS.waves[e.wave + 1] : null;
+        if (nw && e.act >= nw.at) { e.wave++; e.add = waveAdd(e.wave); alarm(); FX.bigHit = 0.6; say('Bridge: ' + nw.say + '!'); }
       }
     });
-    G.events.filter(e => e.left <= 0).forEach(maybeBreak);
+    G.events.filter(e => e.left <= 0).forEach(e => {
+      if (e.type === 'fleet') {
+        G.crisis = 'done'; G.breatherUntil = G.t + BREATHER; G.nextEvent = BREATHER;
+        maybeBreak(e, 0.3); if (!G.lift.length) say('Bridge: fleet driven off. Catch your breath, chief.');
+      } else maybeBreak(e);
+    });
     G.events = G.events.filter(e => e.left > 0);
 
     SYS.forEach(s => {
@@ -476,10 +520,20 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     G.shake = Math.max(0, G.shake - dt);
   }
 
-  function maybeBreak(e) {
+  function waveAdd(i) { const a = {}, w = CRISIS.waves[i].add; for (const k in w) a[k] = Math.round(w[k] * G.D.crisis); return a; }
+  function phase() {
+    if (G.events.some(e => e.type === 'spool' && e.eta <= 0)) return ['JUMP SPOOL', COL['c-engines']];
+    const f = G.events.find(e => e.type === 'fleet');
+    if (f) return f.scan > 0 ? ['UNIDENTIFIED CONTACT', COL.muted] : f.eta > 0 ? ['FLEET INBOUND', COL.hazard] : [`UNDER ATTACK · WAVE ${f.wave + 1}/3`, COL.bad];
+    if (G.t < G.breatherUntil) return ['REGROUPING', COL.good];
+    if (G.t < 60) return ['SETTLING IN', COL.muted];
+    if (!G.crisis && G.t >= G.D.time * CRISIS.at - QUIET && !G.events.length) return ['ALL QUIET', COL.muted];
+    return ['ON PATROL', COL.muted];
+  }
+  function maybeBreak(e, bonus = 0) {
     const cand = e.parts.filter(id => !G.sys[id].damaged);
     if (!cand.length) return;
-    const chance = G.D.brk + 0.5 * (e.act > 0 ? e.short / e.act : 0);
+    const chance = G.D.brk + bonus + 0.5 * (e.act > 0 ? e.short / e.act : 0);
     if (Math.random() >= chance) return;
     const id = cand[Math.floor(Math.random() * cand.length)];
     G.sys[id].damaged = true; G.lift.push(id);
@@ -974,7 +1028,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const bob = evasive ? Math.sin(FX.t * 2.4) * SH * 0.1 : Math.sin(FX.t * 0.8) * SH * 0.01;
     return { cx: SW * 0.42, cy: SH * 0.52 + bob, L, hh: L * 0.13, tilt: evasive ? Math.cos(FX.t * 2.4) * 0.12 : 0 };
   }
-  const active = t => G && G.events.some(e => e.type === t && e.eta <= 0);
+  // the fleet shows as fighters, plus torpedoes from the second wave
+  const active = t => G && G.events.some(e => e.eta <= 0 && (e.type === t || (e.type === 'fleet' && (t === 'fighters' || (t === 'torpedo' && e.wave >= 1)))));
+  // cruiser approach: 0 = out of view, 1 = on station (it creeps in during the scan and the warning)
+  function cruiserTarget() {
+    const f = G.events.find(e => e.type === 'fleet');
+    if (!f) return 0;
+    return f.scan > 0 ? 0.3 * (1 - f.scan / CRISIS.scan) : f.eta > 0 ? 0.3 + 0.7 * (1 - f.eta / f.warn0) : 1;
+  }
+  const cruiserPos = k => ({ x: SW * 1.1 - k * SW * 0.25, y: SH * 0.25, s: SH * (0.13 + 0.11 * k) });
   const hullPoint = g => { const u = rnd(-0.38, 0.3), v = rnd(-0.6, 0.6); return { x: g.cx + u * g.L, y: g.cy + v * g.hh }; };
   function spark(x, y, col, n = 8, sp = 120) {
     for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = rnd(0.3, 1) * sp; FX.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rnd(0.3, 0.7), max: 0.7, col, size: rnd(1.5, 3) }); }
@@ -998,7 +1060,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     FX.stars.forEach(s => { s.x -= spd * s.z * dt / SW; if (s.x < 0) { s.x += 1; s.y = Math.random(); } });
     // fighters
     if (active('fighters') && !G.over) {
-      while (FX.fighters.length < 3) FX.fighters.push({ ph: Math.random() * 6, hp: 1 });
+      while (FX.fighters.length < (G.events.some(e => e.type === 'fleet') ? 5 : 3)) FX.fighters.push({ ph: Math.random() * 6, hp: 1 });
       FX.nextShot -= dt;
       if (FX.nextShot <= 0) {
         FX.nextShot = rnd(0.35, 0.8);
@@ -1035,6 +1097,14 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (r.hit && !r.gone && Math.abs(r.x - g.cx) < g.L * 0.4 && Math.abs(r.y - g.cy) < g.hh) { impact(g, r, false); r.gone = true; }
     });
     FX.rocks = FX.rocks.filter(r => !r.gone && r.x > -30);
+    // the cruiser moves in, and fires heavy bolts from the second wave
+    const ck = cruiserTarget();
+    FX.cru = (FX.cru || 0) + clamp(ck - (FX.cru || 0), -0.25 * dt, 0.6 * dt);
+    const fleet = G.events.find(e => e.type === 'fleet' && e.eta <= 0);
+    if (fleet && fleet.wave >= 1 && !G.over) {
+      FX.nextBig = (FX.nextBig || 0) - dt;
+      if (FX.nextBig <= 0) { FX.nextBig = rnd(1.2, 2); const cp = cruiserPos(FX.cru); FX.bolts.push({ x: cp.x - cp.s * 0.6, y: cp.y, tx: g.cx + rnd(-0.1, 0.25) * g.L, ty: g.cy + rnd(-0.4, 0.4) * g.hh, t: 0, dur: 0.6, col: '#ff3b30', enemy: true }); tone(120, 0.4, 0.04, 'sawtooth'); }
+    }
     // torpedoes
     if (active('torpedo') && !G.over) {
       FX.nextTorp -= dt;
@@ -1108,6 +1178,17 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (streak) c.fillRect(s.x * SW, s.y * SH, streak * s.z + 1, 1.2);
       else c.fillRect(s.x * SW, s.y * SH, 1 + s.z, 1 + s.z);
     });
+    // enemy cruiser, far off behind the action
+    if (FX.cru > 0.01) {
+      const cp = cruiserPos(FX.cru), s = cp.s;
+      c.save(); c.translate(cp.x, cp.y); c.globalAlpha = clamp(0.25 + FX.cru, 0, 1);
+      c.fillStyle = '#2b1e24'; c.beginPath();
+      c.moveTo(-s * 1.4, 0); c.lineTo(-s * 0.6, -s * 0.28); c.lineTo(s * 0.9, -s * 0.34); c.lineTo(s * 1.1, -s * 0.12);
+      c.lineTo(s * 1.1, s * 0.12); c.lineTo(s * 0.9, s * 0.34); c.lineTo(-s * 0.6, s * 0.28); c.closePath(); c.fill();
+      c.fillStyle = '#3a2830'; c.fillRect(-s * 0.2, -s * 0.5, s * 0.5, s * 0.22);
+      for (let i = 0; i < 7; i++) { c.fillStyle = Math.sin(FX.t * 2 + i) > 0.2 ? '#ff5a4f' : '#5a2a2a'; c.fillRect(-s * 0.5 + i * s * 0.18, -s * 0.06, s * 0.05, s * 0.05); }
+      c.restore();
+    }
     // solar flare wash
     if (active('flare')) {
       const fg = c.createRadialGradient(SW, 0, 10, SW, 0, SW * 1.1);
@@ -1176,9 +1257,14 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(pad, by, bw, 8);
     c.fillStyle = COL['c-engines']; c.fillRect(pad, by, bw * jp, 8);
     c.textAlign = 'left'; c.textBaseline = 'bottom'; c.fillStyle = COL.muted;
-    c.fillText(`JUMP DRIVE ${Math.round(jp * 100)}%  ·  ${fmtT(G.jump)}`, pad, by - 4);
+    const sp = G.events.find(e => e.type === 'spool' && e.eta <= 0), er = ratio('engines');
+    if (sp && er < 0.97) c.fillStyle = COL.bad;
+    c.fillText(`JUMP DRIVE ${Math.round(jp * 100)}%  ·  ${fmtT(G.jump)}${sp ? (er < 0.97 ? `  ·  SPOOL AT ${Math.round(clamp(er, 0, 1) * 100)}%: POWER ENGINES` : '  ·  SPOOLING') : ''}`, pad, by - 4);
+    // shift phase, under the camera label
+    const [ph, pc] = phase();
+    c.textAlign = 'left'; c.textBaseline = 'top'; c.fillStyle = pc; c.fillText(ph, pad, pad + 18);
     // incoming contacts
-    const inc = G.events.filter(e => e.eta > 0);
+    const inc = G.events.filter(e => e.eta > 0 && e.type !== 'spool');
     c.textAlign = 'right'; c.textBaseline = 'top';
     inc.forEach((e, i) => {
       const scan = e.scan > 0;
@@ -1300,7 +1386,10 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!G) return;
     const al = $('#alerts');
     const ev = G.events.map(e => e.scan > 0 ? `<li class="scan"><div>Unknown contact<small>${e.hint}</small></div><span>identifying</span></li>`
-      : e.eta > 0 ? `<li class="soon">${e.name}<span>in ${Math.ceil(e.eta)}s</span></li>` : `<li>${e.name}<span>${Math.ceil(e.left)}s left</span></li>`).join('');
+      : e.eta > 0 ? `<li class="soon">${e.name}<span>in ${Math.ceil(e.eta)}s</span></li>`
+      : e.type === 'spool' ? `<li class="spool"><div>${e.name}<small>Engines +18 MW until the jump</small></div><span>${Math.round(clamp(ratio('engines'), 0, 1) * 100)}% charge rate</span></li>`
+      : e.type === 'fleet' ? `<li><div>${e.name}<small>${CRISIS.waves[e.wave].say}</small></div><span>wave ${e.wave + 1}/3 · ${Math.ceil(e.left)}s</span></li>`
+      : `<li>${e.name}<span>${Math.ceil(e.left)}s left</span></li>`).join('');
     const parts = Object.keys(PART).filter(id => G.sys[id].damaged).map(id => `<li class="part">${PART[id]} damaged<span>${partWhere(id)}</span></li>`).join('');
     al.innerHTML = (ev || '<li class="none">No active threats</li>') + parts;
     SYS.forEach(s => {
@@ -1339,6 +1428,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (!G.fuelIn) pr = 'Reactor offline. Load a fresh fuel rod.';
       else if (G.fuel < 25) pr = 'Fuel rod low. Swap it at the fuel port.';
       else if (G.coolIn && G.cool < 25) pr = 'Coolant low. Reactor output is dropping.';
+      else if (G.events.some(e => e.type === 'spool' && e.eta <= 0) && ratio('engines') < 0.97) pr = 'Jump spool stalling. The drive only charges as fast as the engines are powered.';
       else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel.';
       else if (G.squeeze) pr = 'Repair bay is taking 12 MW. Consoles are getting less than you set.';
       else if (G.p.hold && G.p.hold.startsWith('broken_')) pr = `Carrying a damaged ${PART[G.p.hold.slice(7)].toLowerCase()}. Put it in the repair bay.`;

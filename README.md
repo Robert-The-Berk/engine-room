@@ -9,6 +9,7 @@ Open `index.html` in a browser to play. No build step.
 - Too little power damages the ship.
 - Eject spent fuel rods and coolant, drop them in the disposal chute, and load fresh ones from the racks.
 - Alerts start as unknown contacts on long-range sensors, then get identified with a countdown, so there is time to plan.
+- Each shift has a shape: a calm first minute, routine alerts, a hush before an enemy fleet attacks in three waves (spotted long before it arrives), a breather, then the jump drive spool, when the engines need extra power and the drive only charges as fast as they get it.
 - Alerts can damage a shield emitter, the turret or a thruster (only 65% of that system's power gets through). The part comes down the cargo lift. Carry it to the repair bay, which takes a fixed 12 MW of reactor output while it works, then send it back up the lift.
 
 ## Sound
