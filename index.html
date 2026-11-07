@@ -45,7 +45,7 @@ h1 { font-family: var(--f-display); font-weight: 800; font-size: clamp(30px, 4.6
 .view .tag { position: absolute; top: 8px; left: 10px; font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; pointer-events: none; }
 canvas { display: block; width: 100%; border-radius: 8px; border: 1px solid var(--line); }
 canvas#room { background: #0b0f13; touch-action: none; cursor: pointer; }
-canvas#ship { background: #05070b; }
+canvas#ship { background: #05070b; touch-action: none; }
 .prompt { min-height: 22px; font-family: var(--f-mono); font-size: 14px; color: var(--hazard); }
 
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(5,8,11,.35); border-radius: 8px; }
@@ -154,6 +154,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
           <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel in Engineering.</li>
           <li>Too little power and the ship takes damage. Watch the ship to see it happen.</li>
           <li>Fresh fuel rods and coolant are in Storage, across the corridor. Swap them at the reactor before they run dry.</li>
+          <li>Take the guns in the Weapons room to shoot down fighters, drones and torpedoes yourself; kills cut the power an alert needs.</li>
           <li>Halfway through, an enemy fleet attacks. At the end, the jump drive needs full engine power to charge.</li>
           <li>Damaged ship parts come down the cargo lift in Engineering. Fix them in the repair bay while the reactor has power to spare.</li>
         </ul>
@@ -205,7 +206,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     <summary>Engineer's manual</summary>
     <ul>
       <li><b>Power panel.</b> Set power for Shields, Weapons, Life support, Engines and Repair from anywhere on the ship. Pick a system (click it or press <kbd>1</kbd>–<kbd>5</kbd>), then <kbd>Q</kbd>/<kbd>E</kbd> or the − / + buttons; <kbd>R</kbd> matches the load. The bar is what the system gets and the white mark is what it needs right now.</li>
-      <li><b>The deck.</b> Engineering (reactor, breakers, repair bay, cargo lift) opens onto the corridor, which leads to Storage, the Med bay, the Bridge and Weapons. Walk through a door, or click a room on the deck map and you'll walk there. The Bridge, Weapons and Med bay run automatically for now; manual stations come in later updates.</li>
+      <li><b>The deck.</b> Engineering (reactor, breakers, repair bay, cargo lift) opens onto the corridor, which leads to Storage, the Med bay, the Bridge and Weapons. Walk through a door, or click a room on the deck map and you'll walk there. The Bridge and Med bay run automatically for now; their manual stations come in later updates.</li>
+      <li><b>Gunnery</b> (Weapons room). Press <kbd>Space</kbd> at the station to take the guns: the external camera becomes your sight. Aim with the mouse (or <kbd>WASD</kbd>) and click or press <kbd>Space</kbd> to fire; tap to fire on a touch screen; <kbd>X</kbd> leaves. Shots take a moment to arrive, so lead moving targets. The turret holds 3 charges and weapons power sets how fast they refill; a damaged turret sprays its shots. Every fighter or drone you destroy lowers that alert's power demand, and clearing them all ends it early. Torpedoes damage the hull unless shot down. From the fleet's second wave you can also shoot the cruiser; destroy it and the battle ends. While nobody is at the guns the turret fires on its own, slowly and with poor aim.</li>
       <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan your power and be in the right place.</li>
       <li><b>The shift.</b> The first minute is calm. Partway through, sensors pick up an enemy fleet well before it arrives, and things go quiet beforehand. Use the lull to refuel, finish repairs and set your power. The fleet attacks in three waves, each needing different power. Afterwards you get a short breather. In the last 40 seconds the jump drive spools: engines need 18 MW extra, and the drive only charges as fast as the engines are powered.</li>
       <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the power panel says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel in Engineering.</li>
@@ -302,7 +304,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     { room: 'store', type: 'coolrack', label: 'Coolant', tile: [7, 3], use: [7, 4] },
     { room: 'store', type: 'chute', label: 'Disposal', tile: [10, 3], use: [10, 4] },
     { room: 'bridge', type: 'post', sys: 'engines', label: 'Helm', tile: [7, 3], use: [7, 4], soon: 'Helm on autopilot. Manual flying arrives in a later update.' },
-    { room: 'weapons', type: 'post', sys: 'weapons', label: 'Gunnery', tile: [7, 3], use: [7, 4], soon: 'The turret is firing on its own. Manual targeting arrives in the next update.' },
+    { room: 'weapons', type: 'gunnery', sys: 'weapons', label: 'Gunnery', tile: [7, 3], use: [7, 4] },
     { room: 'med', type: 'post', sys: 'life', label: 'Med console', tile: [7, 5], use: [7, 6], soon: 'No patients yet. Crew triage arrives in a later update.' }
   ];
   for (const id in ROOMS) ROOMS[id].obs = new Set();
@@ -349,7 +351,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const D = DIFF[diff];
     G = {
       D, t: 0, jump: D.time, hull: 100, over: null, dmgRate: 0,
-      room: 'eng', sel: 'shields', p: { x: 7.5, y: 8.5, path: null, dest: null, hold: null, face: 1, walk: 0 },
+      room: 'eng', sel: 'shields', man: null, aim: null, gun: { charge: 3 }, kills: 0, p: { x: 7.5, y: 8.5, path: null, dest: null, hold: null, face: 1, walk: 0 },
       sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, delivered: 0, tripped: false, overload: 0, grace: 0, drift: 0, damaged: false }])),
       fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3, trayFuel: false, trayCool: false, primeF: 0, primeC: 0,
       lift: [], bay: { part: null, done: false }, prog: { shields: 0, weapons: 0, engines: 0 }, bayPow: 0, fixed: 0,
@@ -471,6 +473,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (G.over || paused) return;
     G.t += dt;
     G.primeF = Math.max(0, G.primeF - dt); G.primeC = Math.max(0, G.primeC - dt);
+    // turret capacitor: up to 3 shots; weapons power sets how fast it recharges
+    const wq = G.sys.weapons, wr = wq.tripped || wq.delivered < 0.5 ? 0 : clamp(ratio('weapons'), 0, 1.2);
+    G.gun.charge = Math.min(3, G.gun.charge + dt * 1.6 * wr);
     // during the spool the drive only charges as fast as the engines are powered
     const spooling = G.events.some(e => e.type === 'spool' && e.eta <= 0);
     G.jump -= dt * (spooling ? clamp(ratio('engines'), 0, 1) : 1);
@@ -527,7 +532,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       st.drift -= dt;
       if (st.drift <= 0) { st.driftVal = s.id === 'engines' || s.id === 'life' ? Math.round(rnd(-2, 2)) : 0; st.drift = rnd(12, 20); }
       let d = s.base + (st.driftVal || 0);
-      G.events.forEach(e => { if (e.eta <= 0) d += e.add[s.id] || 0; });
+      // an alert's extra demand shrinks as its fighters or drones are destroyed (to 40% with none left)
+      G.events.forEach(e => { if (e.eta <= 0) d += (e.add[s.id] || 0) * (e.foes0 ? 0.4 + 0.6 * e.foes / e.foes0 : 1); });
       if (s.id === 'repair') d = G.hull < 100 ? 6 + Math.round((100 - G.hull) / 12) : 0;
       const prev = st.demand;
       st.demand = Math.max(0, d);
@@ -603,6 +609,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   function movePlayer(dt) {
     const p = G.p;
+    if (G.man) return; // at the guns: the movement keys aim instead
     let vx = 0, vy = 0;
     if (keys.has('left')) vx -= 1; if (keys.has('right')) vx += 1;
     if (keys.has('up')) vy -= 1; if (keys.has('down')) vy += 1;
@@ -638,7 +645,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     routeStep();
   }
   // walk to a room (and a tile in it), through as many doors as it takes
-  function travel(roomId, tile) { G.p.dest = { room: roomId, tile: tile || ROOMS[roomId].spot }; routeStep(); }
+  function travel(roomId, tile) { unman(); G.p.dest = { room: roomId, tile: tile || ROOMS[roomId].spot }; routeStep(); }
   function routeStep() {
     const d = G.p.dest; if (!d) return;
     const cur = [Math.floor(G.p.x), Math.floor(G.p.y)];
@@ -752,6 +759,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       }
       case 'post':
         say(s.soon); return;
+      case 'gunnery':
+        if (G.man) unman(); else if (p.hold) say('Put down what you are carrying first.'); else man();
+        return;
     }
   }
 
@@ -770,7 +780,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       ? `The jump drive fired with the hull at ${Math.round(G.hull)}%. The bridge sends its thanks to engineering.`
       : `The hull gave out with ${fmtT(G.jump)} left on the jump drive.`;
     const s = document.createElement('div'); s.className = 'stats';
-    s.textContent = `Shift ${fmtT(G.t)} · Breakers tripped ${G.trips} · Parts repaired ${G.fixed} · Systems short of power ${Math.round(G.under)} s`;
+    s.textContent = `Shift ${fmtT(G.t)} · Breakers tripped ${G.trips} · Parts repaired ${G.fixed} · Kills ${G.kills} · Systems short of power ${Math.round(G.under)} s`;
     const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'New shift'; b.addEventListener('click', newGame);
     const c = document.createElement('button'); c.className = 'btn'; c.textContent = 'Change difficulty'; c.addEventListener('click', () => { $('#endBox').hidden = true; $('#startBox').hidden = false; });
     const row = document.createElement('div'); row.className = 'seg'; row.append(b, c);
@@ -986,15 +996,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const c = ctx, [tx, ty] = s.tile;
     const ol = hl ? COL.hazard : null;
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    if (s.type === 'post') {
-      // a station for a later update: shows its system running on automatic
+    if (s.type === 'post' || s.type === 'gunnery') {
+      // a station console: its system's power bar, AUTO (or MANUAL while you are at the guns)
       const st = G.sys[s.sys], col = sysColor(s.sys);
       const b = box(c, tx + 0.05, ty + 0.1, 0.9, 0.7, 1.15, '#34404c', '#28323c', ol);
       s.rect = { x: b.x, y: b.y - ts * 0.4, w: b.w, h: b.bottom - b.y + ts * 0.4 };
       const pad = b.w * 0.1, sw = b.w - pad * 2, sh = b.faceH * 0.45, sy = b.faceY + b.faceH * 0.12;
       c.fillStyle = '#081016'; c.fillRect(b.x + pad, sy, sw, sh);
       c.fillStyle = col; c.fillRect(b.x + pad + 2, sy + sh * 0.62, clamp(ratio(s.sys), 0, 1) * (sw - 4), sh * 0.22);
-      c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`; c.fillText('AUTO', b.x + b.w / 2, sy + sh * 0.3);
+      c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`; c.fillText(s.type === 'gunnery' && G.man ? 'MANUAL' : 'AUTO', b.x + b.w / 2, sy + sh * 0.3);
       c.fillStyle = st.demand - st.delivered > 0.5 ? COL.bad : COL.good; c.beginPath(); c.arc(b.x + b.w / 2, b.faceY + b.faceH * 0.78, ts * 0.07, 0, Math.PI * 2); c.fill();
       c.fillStyle = col; c.font = `700 ${Math.max(9, ts * 0.24)}px Oxanium, sans-serif`;
       c.fillText(s.label.toUpperCase(), b.x + b.w / 2, b.y - ts * 0.2);
@@ -1213,7 +1223,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   // cruiser approach: 0 = out of view, 1 = on station (it creeps in during the scan and the warning)
   function cruiserTarget() {
     const f = G.events.find(e => e.type === 'fleet');
-    if (!f) return 0;
+    if (!f || f.cruHp === 0) return 0;
     return f.scan > 0 ? 0.3 * (1 - f.scan / CRISIS.scan) : f.eta > 0 ? 0.3 + 0.7 * (1 - f.eta / f.warn0) : 1;
   }
   const cruiserPos = k => ({ x: SW * 1.1 - k * SW * 0.25, y: SH * 0.25, s: SH * (0.13 + 0.11 * k) });
@@ -1238,30 +1248,48 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     // stars
     const spd = (G.over === 'win' ? 2400 * FX.warp : 30 + 170 * clamp(eng, 0, 1.2));
     FX.stars.forEach(s => { s.x -= spd * s.z * dt / SW; if (s.x < 0) { s.x += 1; s.y = Math.random(); } });
-    // fighters
-    if (active('fighters') && !G.over) {
-      while (FX.fighters.length < (G.events.some(e => e.type === 'fleet') ? 5 : 3)) FX.fighters.push({ ph: Math.random() * 6, hp: 1 });
+    // enemies are spawned for each live alert (and each fleet wave) and linked to it, so kills feed back into the alert
+    G.events.forEach(e => {
+      if (e.eta > 0 || G.over) return;
+      if (e.type === 'fighters' && !e.spawned) { e.spawned = true; spawnFighters(e, 3); }
+      if (e.type === 'drones' && !e.spawned) {
+        e.spawned = true; e.foes0 = e.foes = 4;
+        for (let i = 0; i < 4; i++) FX.drones.push({ u: rnd(-0.35, 0.3), s: Math.random() < 0.5 ? 1 : -1, sp: rnd(0.02, 0.05), hp: 1, ev: e });
+      }
+      if (e.type === 'fleet' && e.spawned !== e.wave) { e.spawned = e.wave; spawnFighters(e, [4, 3, 2][e.wave]); if (e.wave === 1) e.cruHp = CRUISER_HP; }
+    });
+    FX.fighters.forEach(f => { if (!G.events.includes(f.ev)) f.leave = (f.leave || 0) + dt; });
+    FX.fighters = FX.fighters.filter(f => f.hp > 0 && (f.leave || 0) < 1.5);
+    FX.drones = FX.drones.filter(d => d.hp > 0 && G.events.includes(d.ev));
+    // fighters shoot at us
+    const shooters = FX.fighters.filter(f => !f.leave);
+    if (shooters.length && !G.over) {
       FX.nextShot -= dt;
       if (FX.nextShot <= 0) {
-        FX.nextShot = rnd(0.35, 0.8);
-        const f = FX.fighters[Math.floor(Math.random() * FX.fighters.length)], fp = fighterPos(f, g);
+        FX.nextShot = rnd(0.5, 1.1) * 3 / Math.max(3, shooters.length);
+        const fp = fighterPos(shooters[Math.floor(Math.random() * shooters.length)], g);
         FX.bolts.push({ x: fp.x, y: fp.y, tx: g.cx + rnd(-0.2, 0.2) * g.L, ty: g.cy + rnd(-0.5, 0.5) * g.hh, t: 0, dur: 0.45, col: COL.bad, enemy: true });
       }
-    } else FX.fighters = FX.fighters.filter(f => (f.leave = (f.leave || 0) + dt) < 1.5);
-    // our turret
-    const targets = FX.fighters.length ? FX.fighters.map(f => fighterPos(f, g)) : FX.drones.length ? FX.drones.map(d => droneXY(d, g)) : [];
-    FX.nextTurret -= dt;
-    if (targets.length && wp && FX.nextTurret <= 0 && !G.over) {
-      FX.nextTurret = 0.3;
-      const t = targets[Math.floor(Math.random() * targets.length)];
-      FX.bolts.push({ x: g.cx + g.L * 0.05, y: g.cy - g.hh * 1.1, tx: t.x, ty: t.y, t: 0, dur: 0.25, col: COL['c-weapons'], enemy: false });
-      tone(1500, 0.04, 0.012, 'square');
+    }
+    // the turret fires on its own when nobody is at the guns: slowly, and it often misses
+    if (G.man !== 'gunnery' && !G.over) {
+      const w = G.sys.weapons, r = w.tripped || w.delivered < 0.5 ? 0 : clamp(ratio('weapons'), 0, 1) * (w.damaged ? 0.6 : 1);
+      const tgts = [...FX.torps.filter(t => !t.gone).map(t => ({ o: t, k: 't' })), ...FX.fighters.filter(f => !f.leave).map(f => ({ o: f, k: 'f' })), ...FX.drones.map(d => ({ o: d, k: 'd' }))];
+      FX.nextTurret -= dt;
+      if (tgts.length && r > 0.3 && FX.nextTurret <= 0) {
+        FX.nextTurret = 1.5 / r;
+        const t = tgts[0].k === 't' ? tgts[0] : tgts[Math.floor(Math.random() * tgts.length)], at = targetXY(t, g), hit = Math.random() < 0.55;
+        FX.bolts.push({ x: muzzle(g).x, y: muzzle(g).y, tx: at.x + (hit ? 0 : rnd(-30, 30)), ty: at.y + (hit ? 0 : rnd(-30, 30)), t: 0, dur: 0.2, col: COL['c-weapons'], auto: hit ? t : null });
+        tone(1500, 0.04, 0.012, 'square');
+      }
     }
     FX.bolts.forEach(b => {
       b.t += dt;
       if (b.t >= b.dur && !b.done) {
         b.done = true;
-        if (b.enemy) impact(g, { x: b.x, y: b.y }, sh); else spark(b.tx, b.ty, COL['c-weapons'], 6, 80);
+        if (b.enemy) impact(g, { x: b.x, y: b.y }, sh);
+        else if (b.shot) resolveShot(b.tx, b.ty, g);
+        else if (b.auto) damage(b.auto, g); else spark(b.tx, b.ty, COL['c-weapons'], 4, 60);
       }
     });
     FX.bolts = FX.bolts.filter(b => !b.done);
@@ -1277,15 +1305,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (r.hit && !r.gone && Math.abs(r.x - g.cx) < g.L * 0.4 && Math.abs(r.y - g.cy) < g.hh) { impact(g, r, false); r.gone = true; }
     });
     FX.rocks = FX.rocks.filter(r => !r.gone && r.x > -30);
-    // the cruiser moves in, and fires heavy bolts from the second wave
+    // the cruiser moves in, and fires heavy bolts from the second wave until it is destroyed
     const ck = cruiserTarget();
     FX.cru = (FX.cru || 0) + clamp(ck - (FX.cru || 0), -0.25 * dt, 0.6 * dt);
     const fleet = G.events.find(e => e.type === 'fleet' && e.eta <= 0);
-    if (fleet && fleet.wave >= 1 && !G.over) {
+    if (fleet && fleet.wave >= 1 && fleet.cruHp > 0 && !G.over) {
       FX.nextBig = (FX.nextBig || 0) - dt;
       if (FX.nextBig <= 0) { FX.nextBig = rnd(1.2, 2); const cp = cruiserPos(FX.cru); FX.bolts.push({ x: cp.x - cp.s * 0.6, y: cp.y, tx: g.cx + rnd(-0.1, 0.25) * g.L, ty: g.cy + rnd(-0.4, 0.4) * g.hh, t: 0, dur: 0.6, col: '#ff3b30', enemy: true }); tone(120, 0.4, 0.04, 'sawtooth'); }
     }
-    // torpedoes
+    // torpedoes: they hurt the hull unless shot down
     if (active('torpedo') && !G.over) {
       FX.nextTorp -= dt;
       if (FX.nextTorp <= 0) { FX.nextTorp = 2.6; FX.torps.push({ x: SW + 10, y: g.cy + rnd(-0.3, 0.3) * SH, t: 0 }); tone(300, 0.3, 0.03, 'sawtooth'); }
@@ -1294,17 +1322,18 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       tp.t += dt;
       const tx = g.cx + g.L * 0.3, ty = g.cy;
       const dx = tx - tp.x, dy = ty - tp.y, d = Math.hypot(dx, dy);
-      tp.x += dx / d * 260 * dt; tp.y += dy / d * 260 * dt;
-      if (wp && tp.x < SW * 0.8 && !tp.gone) { FX.bolts.push({ x: g.cx + g.L * 0.05, y: g.cy - g.hh * 1.1, tx: tp.x, ty: tp.y, t: 0, dur: 0.15, col: COL['c-weapons'] }); spark(tp.x, tp.y, '#ffd28a', 22, 200); tp.gone = true; }
-      if (d < 12 && !tp.gone) { impact(g, tp, false); spark(tp.x, tp.y, COL.bad, 20, 220); tp.gone = true; FX.bigHit = 0.6; }
+      tp.x += dx / d * 200 * dt; tp.y += dy / d * 200 * dt;
+      if (d < 12 && !tp.gone) { impact(g, tp, false); spark(tp.x, tp.y, COL.bad, 20, 220); tp.gone = true; if (!G.over) hit(2 * G.D.dmg, 'TORPEDO HIT'); }
     });
     FX.torps = FX.torps.filter(tp => !tp.gone);
-    // boarding drones
-    if (active('drones') && !G.over) { while (FX.drones.length < 4) FX.drones.push({ u: rnd(-0.35, 0.3), s: rnd(-1, 1) > 0 ? 1 : -1, sp: rnd(0.02, 0.05) }); }
-    else FX.drones = [];
+    // boarding drones crawl along the hull
     FX.drones.forEach(d => { d.u += d.sp * dt; if (d.u > 0.32) d.u = -0.36; });
-    FX.nextZap -= dt;
-    if (wp && FX.drones.length && FX.nextZap <= 0) { FX.nextZap = 1.0; const d = FX.drones.shift(); const p = droneXY(d, g); spark(p.x, p.y, COL['c-weapons'], 10, 90); }
+    // keyboard aiming while at the guns
+    if (G.man === 'gunnery') {
+      let ax = 0, ay = 0;
+      if (keys.has('left')) ax -= 1; if (keys.has('right')) ax += 1; if (keys.has('up')) ay -= 1; if (keys.has('down')) ay += 1;
+      if (ax || ay) { const l = Math.hypot(ax, ay); G.aim.x = clamp(G.aim.x + ax / l * SW * 0.7 * dt, 0, SW); G.aim.y = clamp(G.aim.y + ay / l * SW * 0.7 * dt, 0, SH); }
+    }
     // breach venting
     if (active('breach')) for (let i = 0; i < 2; i++) FX.parts.push({ x: g.cx - g.L * 0.05, y: g.cy + g.hh * 0.6, vx: rnd(-40, 40), vy: rnd(60, 140), life: rnd(0.4, 0.9), max: 0.9, col: '#e8f3ff', size: rnd(1, 2.5) });
     // damage sparks from underpowered systems
@@ -1321,6 +1350,66 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       FX.boom = Math.min(1.6, FX.boom + dt * 0.7);
     }
   }
+  // ---------- gunnery ----------
+  const CRUISER_HP = 10;
+  const muzzle = g => ({ x: g.cx + g.L * 0.13, y: g.cy - g.hh * 1.06 });
+  function spawnFighters(e, n) {
+    for (let i = 0; i < n; i++) FX.fighters.push({ ph: Math.random() * 6.28, hp: 2, ev: e });
+    e.foes0 = e.foes = FX.fighters.filter(f => f.ev === e && f.hp > 0).length;
+  }
+  function targetXY(t, g) { return t.k === 'f' ? fighterPos(t.o, g) : t.k === 'd' ? droneXY(t.o, g) : { x: t.o.x, y: t.o.y }; }
+  // one hit on a target: fighters take two, everything else one
+  function damage(t, g) {
+    const o = t.o, p = targetXY(t, g);
+    if (t.k === 't') { if (o.gone) return; o.gone = true; spark(p.x, p.y, '#ffd28a', 22, 200); G.kills++; return; }
+    if (t.k === 'r') { o.gone = true; spark(p.x, p.y, '#b9a990', 14, 120); return; }
+    if (o.hp <= 0 || o.leave) return;
+    o.hp--; spark(p.x, p.y, COL['c-weapons'], 8, 90);
+    if (o.hp <= 0) { spark(p.x, p.y, '#ffd28a', 24, 220); spark(p.x, p.y, '#ffffff', 8, 120); noiseHit(0.4, 0.12, 3000, 200); killFoe(o.ev); }
+  }
+  function killFoe(e) {
+    G.kills++;
+    if (!G.events.includes(e)) return;
+    e.foes = Math.max(0, e.foes - 1);
+    if (e.foes > 0) return;
+    if (e.type === 'fleet') say('Bridge: wave cleared! Stay sharp for the next one.');
+    else { e.left = Math.min(e.left, 1.5); say(e.type === 'drones' ? 'Bridge: hull is clear of drones!' : 'Bridge: all fighters down!'); }
+  }
+  function fire() {
+    if (!G || G.over || paused || G.man !== 'gunnery') return;
+    if (G.gun.charge < 1) { tone(140, 0.08, 0.03, 'square'); return; }
+    G.gun.charge -= 1;
+    const g = geom(), m = muzzle(g), sp = G.sys.weapons.damaged ? 26 : 0;
+    FX.bolts.push({ x: m.x, y: m.y, tx: G.aim.x + rnd(-sp, sp), ty: G.aim.y + rnd(-sp, sp), t: 0, dur: 0.18, col: '#ffd28a', shot: true });
+    tone(880, 0.07, 0.035, 'square'); noiseHit(0.1, 0.06, 5000, 900);
+  }
+  // a manual shot lands: hit whatever is closest to the point it reaches
+  function resolveShot(x, y, g) {
+    let best = null, bd = 1e9;
+    const consider = (o, k, r) => { const p = targetXY({ o, k }, g), d = Math.hypot(p.x - x, p.y - y); if (d < r && d < bd) { bd = d; best = { o, k }; } };
+    FX.fighters.forEach(f => { if (!f.leave) consider(f, 'f', 18); });
+    FX.drones.forEach(d => consider(d, 'd', 11));
+    FX.torps.forEach(t => { if (!t.gone) consider(t, 't', 14); });
+    FX.rocks.forEach(r => { if (!r.gone) consider(r, 'r', r.r + 5); });
+    if (best) return damage(best, g);
+    const fl = G.events.find(e => e.type === 'fleet' && e.eta <= 0 && e.wave >= 1 && e.cruHp > 0);
+    if (fl) {
+      const cp = cruiserPos(FX.cru), nx = (x - cp.x) / (cp.s * 1.25), ny = (y - cp.y) / (cp.s * 0.45);
+      if (nx * nx + ny * ny < 1) {
+        fl.cruHp--; spark(x, y, COL['c-weapons'], 12, 120); noiseHit(0.3, 0.1, 2000, 200);
+        if (fl.cruHp <= 0) {
+          for (let i = 0; i < 5; i++) spark(cp.x + rnd(-cp.s, cp.s), cp.y + rnd(-cp.s * 0.3, cp.s * 0.3), i % 2 ? '#ffd28a' : COL.bad, 30, 260);
+          noiseHit(2, 0.5, 2500, 40); tone(45, 1.5, 0.2, 'sine'); G.kills++;
+          fl.left = Math.min(fl.left, 2); say('Bridge: the cruiser is breaking up! Outstanding shooting.');
+        }
+        return;
+      }
+    }
+    spark(x, y, 'rgba(255,210,138,.6)', 3, 40);
+  }
+  function man() { G.man = 'gunnery'; G.p.path = null; G.p.dest = null; if (!G.aim) G.aim = { x: SW * 0.75, y: SH * 0.45 }; say('At the guns. Aim on the external camera; click or Space to fire, X to leave.'); click(); }
+  function unman() { if (G && G.man) { G.man = null; say('Left the gunnery station. The turret is back on automatic.'); } }
+
   function fighterPos(f, g) {
     const t = FX.t + f.ph, out = (f.leave || 0) * SW * 0.4;
     return { x: g.cx + g.L * 0.95 + Math.cos(t * 1.1) * g.L * 0.22 + out, y: g.cy + Math.sin(t * 1.6 + f.ph) * SH * 0.3 };
@@ -1424,6 +1513,25 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       const k2 = clamp(k - 0.15, 0, 1), x2 = b.x + (b.tx - b.x) * k2, y2 = b.y + (b.ty - b.y) * k2;
       c.strokeStyle = b.col; c.lineWidth = 2.5; c.beginPath(); c.moveTo(x2, y2); c.lineTo(x, y); c.stroke();
     });
+    // gunnery overlay
+    const flC = G.events.find(e => e.type === 'fleet' && e.eta <= 0 && e.wave >= 1 && e.cruHp > 0);
+    if (flC && FX.cru > 0.5) {
+      const cp = cruiserPos(FX.cru), w = cp.s * 1.6;
+      c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(cp.x - w / 2, cp.y + cp.s * 0.5, w, 5);
+      c.fillStyle = COL.bad; c.fillRect(cp.x - w / 2, cp.y + cp.s * 0.5, w * flC.cruHp / CRUISER_HP, 5);
+    }
+    if (G.man === 'gunnery' && !G.over) {
+      c.strokeStyle = rgba(COL.bad, .8); c.lineWidth = 1.5;
+      const bracket = (x, y, r) => { [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => { c.beginPath(); c.moveTo(x + a * r, y + b * r * 0.5); c.lineTo(x + a * r, y + b * r); c.lineTo(x + a * r * 0.5, y + b * r); c.stroke(); }); };
+      FX.fighters.forEach(f => { if (!f.leave) { const p = fighterPos(f, g); bracket(p.x, p.y, 14); } });
+      FX.drones.forEach(d => { const p = droneXY(d, g); bracket(p.x, p.y, 9); });
+      FX.torps.forEach(t => bracket(t.x, t.y, 12));
+      const a = G.aim, ready = G.gun.charge >= 1;
+      c.strokeStyle = ready ? '#ffd28a' : rgba('#ffd28a', .4); c.lineWidth = 2;
+      c.beginPath(); c.arc(a.x, a.y, 13, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); c.moveTo(a.x - 20, a.y); c.lineTo(a.x - 6, a.y); c.moveTo(a.x + 6, a.y); c.lineTo(a.x + 20, a.y); c.moveTo(a.x, a.y - 20); c.lineTo(a.x, a.y - 6); c.moveTo(a.x, a.y + 6); c.lineTo(a.x, a.y + 20); c.stroke();
+      for (let i = 0; i < 3; i++) { const f = clamp(G.gun.charge - i, 0, 1); c.fillStyle = rgba('#ffd28a', 0.2); c.fillRect(a.x - 13 + i * 9, a.y + 18, 7, 4); c.fillStyle = '#ffd28a'; c.fillRect(a.x - 13 + i * 9, a.y + 18, 7 * f, 4); }
+    }
     // particles
     FX.parts.forEach(p => { c.globalAlpha = clamp(p.life / p.max, 0, 1); c.fillStyle = p.col; c.fillRect(p.x, p.y, p.size, p.size); });
     c.globalAlpha = 1;
@@ -1443,6 +1551,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     // shift phase, under the camera label
     const [ph, pc] = phase();
     c.textAlign = 'left'; c.textBaseline = 'top'; c.fillStyle = pc; c.fillText(ph, pad, pad + 18);
+    c.fillStyle = G.man === 'gunnery' ? '#ffd28a' : COL.muted;
+    c.fillText(G.man === 'gunnery' ? 'GUNNERY: MANUAL · CLICK/SPACE FIRE · X LEAVE' : 'TURRET: AUTO', pad, pad + 36);
     // incoming contacts
     const inc = G.events.filter(e => e.eta > 0 && e.type !== 'spool');
     c.textAlign = 'right'; c.textBaseline = 'top';
@@ -1561,7 +1671,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     }
     if (id === 'store') return G.fuel < 40 || G.cool < 40 ? ['Refuel due', true] : [`${G.spareFuel} rods · ${G.spareCool} coolant`, false];
     if (id === 'bridge') return ['Autopilot', false];
-    if (id === 'weapons') return ['Auto turret', false];
+    if (id === 'weapons') {
+      if (G.man === 'gunnery') return [`Manned · ${Math.floor(G.gun.charge)}/3 charged`, false];
+      const n = FX.fighters.filter(f => !f.leave).length + FX.drones.length + FX.torps.length;
+      return n ? [`${n} target${n > 1 ? 's' : ''}`, true] : ['Auto turret', false];
+    }
     if (id === 'med') return ['No patients', false];
     return ['', false];
   }
@@ -1629,9 +1743,12 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       e.b.setAttribute('aria-label', `${ROOMS[id].name}${id === G.room ? ', you are here' : ''}${note ? ', ' + note : ''}`);
     }
     const s = nearStation();
-    const sig = s && !G.over ? s.room + s.type : null, cardKey = sig || 'idle-' + G.room;
+    const sig = s && !G.over ? s.room + s.type : null, cardKey = (sig || 'idle-' + G.room) + (G.man || '');
     if (cardKey !== lastStation) { lastStation = cardKey; buildStationCard(sig ? s : null); }
-    if (s && s.type === 'post') $('#stationCard .state').textContent = `${SYS.find(x => x.id === s.sys).name}: ${Math.round(G.sys[s.sys].delivered)} of ${Math.round(G.sys[s.sys].demand)} MW.`;
+    if (s && s.type === 'gunnery') {
+      const w = G.sys.weapons, rate = w.tripped || w.delivered < 0.5 ? 0 : clamp(ratio('weapons'), 0, 1.2);
+      $('#stationCard .state').textContent = `Charges ${Math.floor(G.gun.charge)}/3 · recharging at ${Math.round(rate * 100)}% (weapons power)${w.damaged ? ' · turret damaged: shots spray' : ''}.`;
+    } else if (s && s.type === 'post') $('#stationCard .state').textContent = `${SYS.find(x => x.id === s.sys).name}: ${Math.round(G.sys[s.sys].delivered)} of ${Math.round(G.sys[s.sys].demand)} MW.`;
     else if (sig === 'engbay') $('#stationCard .state').textContent = bayStatus();
     else if (sig === 'englift') {
       const h = G.p.hold;
@@ -1655,9 +1772,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       else if (G.lift.length) pr = `Damaged ${PART[G.lift[0]].toLowerCase()} waiting at the cargo lift in Engineering.`;
       else if (G.p.hold && G.p.hold.startsWith('spent')) pr = 'Carrying a spent item. The disposal chute is in Storage.';
       else if (G.p.hold === 'freshFuel' || G.p.hold === 'freshCool') pr = `Carrying fresh ${G.p.hold === 'freshFuel' ? 'fuel' : 'coolant'}. Swap it at the reactor in Engineering.`;
+      else if (G.man === 'gunnery') pr = G.gun.charge < 1 ? 'Recharging. More weapons power means faster shots.' : 'At the guns: aim on the external camera, click or Space to fire, X to leave.';
       else if (G.trayFuel && G.fuel < 50) pr = 'A spent rod is still on the fuel port tray. Dispose of it before the next swap.';
     }
     $('#prompt').textContent = pr;
+    sc.style.cursor = G.man === 'gunnery' ? 'crosshair' : 'default';
   }
   function buildStationCard(s) {
     const card = $('#stationCard');
@@ -1665,11 +1784,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!s) { card.classList.add('idle'); card.innerHTML = `<h3>Station · ${ROOMS[G ? G.room : 'eng'].name}</h3><p class="hint">Walk up to the breaker panel, the reactor ports, the repair bay or cargo lift (Engineering), or the racks and disposal chute (Storage) to use them.</p>`; return; }
     card.classList.remove('idle');
     const t = document.createElement('div'); t.className = 'title'; t.textContent = s.label; card.append(t);
-    const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Use repair bay', lift: 'Use cargo lift', post: 'Check station' };
+    const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Use repair bay', lift: 'Use cargo lift', post: 'Check station', gunnery: G && G.man ? 'Leave the guns (X)' : 'Take the guns' };
     const b = document.createElement('button'); b.className = 'btn'; b.textContent = labels[s.type]; b.addEventListener('click', use);
     const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = 'or press <kbd>Space</kbd>';
     card.append(b, h);
-    if (s.type === 'bay' || s.type === 'lift' || s.type === 'post') { const st = document.createElement('div'); st.className = 'state hint'; card.append(st); }
+    if (s.type === 'bay' || s.type === 'lift' || s.type === 'post' || s.type === 'gunnery') { const st = document.createElement('div'); st.className = 'state hint'; card.append(st); }
   }
   function hold(btn, fn) {
     let iv = null, to = null;
@@ -1702,6 +1821,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (e.code === 'KeyQ' || e.code === 'Minus') { adjust(-1); e.preventDefault(); }
     else if (e.code === 'KeyE' || e.code === 'Equal') { adjust(1); e.preventDefault(); }
     else if (e.code === 'KeyR') { matchLoad(); e.preventDefault(); }
+    else if (G.man === 'gunnery' && (e.code === 'Space' || e.code === 'KeyF')) { e.preventDefault(); fire(); }
+    else if (e.code === 'KeyX') { unman(); }
     else if ((e.code === 'Space' || e.code === 'KeyF') && !e.repeat) { e.preventDefault(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); use(); }
   });
   document.addEventListener('keyup', e => { if (DIRS[e.code]) keys.delete(DIRS[e.code]); });
@@ -1721,9 +1842,17 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (walkable(tx, ty)) target = [tx, ty];
     }
     if (!target) return;
-    G.p.dest = null;
+    unman(); G.p.dest = null;
     const path = bfs([Math.floor(G.p.x), Math.floor(G.p.y)], target);
     if (path) G.p.path = path;
+  });
+  // aiming and firing on the external camera while at the guns
+  const shipXY = e => { const r = sc.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  sc.addEventListener('pointermove', e => { if (G && G.man === 'gunnery') G.aim = shipXY(e); });
+  sc.addEventListener('pointerdown', e => {
+    if (!G || G.over || paused || !$('#startBox').hidden) return;
+    if (G.man !== 'gunnery') { say('Take the gunnery station in Weapons to aim the turret yourself.'); return; }
+    e.preventDefault(); G.aim = shipXY(e); fire();
   });
   function togglePause() {
     if (!G || G.over || !$('#startBox').hidden) return;

@@ -5,7 +5,8 @@ You are the chief engineer of a starship. Keep the reactor's power flowing to Sh
 Open `index.html` in a browser to play. No build step.
 
 - Set each system's power from the power panel, wherever you are on the ship (1–5 picks a system, Q/E adjusts it, R matches the load).
-- Walk the deck (WASD/arrows, click, or click a room on the deck map): Engineering opens onto a corridor leading to Storage, the Med bay, the Bridge and Weapons. The Bridge, Weapons and Med bay run automatically for now; their manual stations are the next updates.
+- Walk the deck (WASD/arrows, click, or click a room on the deck map): Engineering opens onto a corridor leading to Storage, the Med bay, the Bridge and Weapons. The Bridge and Med bay run automatically for now; their manual stations are the next updates.
+- Take the guns in the Weapons room: the external camera becomes your sight (aim with the mouse or WASD, click or Space to fire). Weapons power sets how fast the turret recharges. Each fighter or drone destroyed lowers that alert's power demand and clearing them ends it early; torpedoes hit the hull unless shot down; from the fleet's second wave the cruiser can be destroyed to end the battle. Unmanned, the turret fires on its own, slowly and with poor aim.
 - Too much power for a few seconds trips that system's breaker; reset it at the breaker panel in Engineering.
 - Too little power damages the ship.
 - Fresh fuel rods and coolant are in Storage. Swap them at the reactor (it re-primes for a few seconds), then take the spent one from the port tray to the disposal chute.
