@@ -68,7 +68,7 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .card h3 { margin: 0; font-family: var(--f-display); font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .bar { height: 10px; border-radius: 5px; background: #0d1217; border: 1px solid var(--line); overflow: hidden; }
 .bar i { display: block; height: 100%; width: 100%; background: var(--good); }
-.kv { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+.kv { display: grid; grid-template-columns: auto minmax(60px, 1fr) auto; gap: 6px 10px; align-items: center; font-size: 13px; }
 .kv .lbl { color: var(--muted); }
 .kv .val { font-family: var(--f-mono); text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -82,12 +82,15 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .alerts .spool { background: color-mix(in srgb, var(--c-engines) 14%, transparent); border-left-color: var(--c-engines); }
 .alerts .none { background: transparent; border-left-color: var(--line); color: var(--muted); font-weight: 400; }
 
-.systems { display: flex; flex-direction: column; gap: 8px; }
-.sys { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; }
+.systems { display: flex; flex-direction: column; gap: 4px; }
+.sys { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; width: 100%; padding: 5px 6px; border-radius: 6px; border: 1px solid transparent; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sys:hover { background: var(--panel2); }
+.sys[aria-pressed="true"] { border-color: var(--hazard); background: var(--panel2); }
+.sys .nm kbd { margin-right: 4px; }
 .sys .dot { width: 10px; height: 10px; border-radius: 2px; }
 .sys .nm { font-weight: 600; }
 .sys .nums { font-family: var(--f-mono); font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.sys .meter { grid-column: 2 / 4; position: relative; height: 8px; background: #0d1217; border: 1px solid var(--line); border-radius: 4px; }
+.sys .meter { display: block; grid-column: 2 / 4; position: relative; height: 8px; background: #0d1217; border: 1px solid var(--line); border-radius: 4px; }
 .sys .meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
 .sys .meter .dm { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); }
 .chip { font-family: var(--f-mono); font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
@@ -105,6 +108,15 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .ctrl .readout { text-align: center; font-family: var(--f-mono); font-size: 28px; }
 .ctrl .readout small { display: block; font-size: 12px; color: var(--muted); font-family: var(--f-body); }
 .hint { font-size: 12px; color: var(--muted); }
+.deck { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-areas: ". bridge weapons ." "med hall hall store" ". eng eng ."; gap: 5px; }
+.deck button { position: relative; min-width: 0; min-height: 44px; padding: 5px 4px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); font: 600 12px var(--f-body); cursor: pointer; touch-action: manipulation; }
+@media (min-width: 900px) { .board .deck-card { grid-column: span 2; } }
+.deck button small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck button:hover { border-color: var(--muted); }
+.deck button.here { border-color: var(--hazard); color: var(--hazard); background: color-mix(in srgb, var(--hazard) 10%, var(--panel2)); }
+.deck button.here::after { content: 'YOU'; position: absolute; top: 3px; right: 5px; font: 600 9px var(--f-mono); letter-spacing: .08em; }
+.deck button.need { box-shadow: inset 0 0 0 1px var(--bad); }
+.deck button.need small { color: var(--bad); }
 kbd { font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel2); color: var(--fg); }
 
 details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
@@ -126,8 +138,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   <section class="stage" id="stage">
     <div class="view" id="roomView">
-      <canvas id="room" aria-label="Engine room. Click a station to walk to it."></canvas>
-      <span class="tag">Engineering</span>
+      <canvas id="room" aria-label="The room you are in. Click a station or a door to walk to it."></canvas>
+      <span class="tag" id="roomTag">Engineering</span>
     </div>
     <div class="view" id="shipView">
       <canvas id="ship" aria-label="Exterior view of the ship showing shields, weapons, engines and damage."></canvas>
@@ -138,12 +150,12 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         <h2>Chief engineer, report</h2>
         <p>The bridge is charging the jump drive. Keep every system powered until it is ready. Your engine room is on the left; the ship is on the right.</p>
         <ul>
-          <li>Walk to a console to set its power. Match what the system needs.</li>
-          <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel.</li>
+          <li>Set each system's power from the power panel, wherever you are: <kbd>1</kbd>–<kbd>5</kbd> picks a system, <kbd>Q</kbd>/<kbd>E</kbd> lowers or raises it, <kbd>R</kbd> matches the load.</li>
+          <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel in Engineering.</li>
           <li>Too little power and the ship takes damage. Watch the ship to see it happen.</li>
-          <li>Swap spent fuel rods and coolant before they run dry.</li>
+          <li>Fresh fuel rods and coolant are in Storage, across the corridor. Swap them at the reactor before they run dry.</li>
           <li>Halfway through, an enemy fleet attacks. At the end, the jump drive needs full engine power to charge.</li>
-          <li>Damaged ship parts come down the cargo lift. Fix them in the repair bay while the reactor has power to spare.</li>
+          <li>Damaged ship parts come down the cargo lift in Engineering. Fix them in the repair bay while the reactor has power to spare.</li>
         </ul>
         <div class="seg" id="diff">
           <button class="btn" data-v="0" aria-pressed="false">Cadet</button>
@@ -151,7 +163,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
           <button class="btn" data-v="2" aria-pressed="false">Chief</button>
         </div>
         <button class="btn primary" id="start">Start shift</button>
-        <p class="hint">Move with <kbd>WASD</kbd> or arrows, or click a station. <kbd>Q</kbd>/<kbd>E</kbd> lower or raise power, <kbd>R</kbd> matches the load, <kbd>Space</kbd> uses a station. <kbd>P</kbd> pauses.</p>
+        <p class="hint">Move with <kbd>WASD</kbd> or arrows, click where to go, or pick a room on the deck map. <kbd>Space</kbd> uses a station. <kbd>P</kbd> pauses.</p>
       </div>
     </div>
     <div class="overlay" id="endBox" hidden><div class="panel" id="endPanel"></div></div>
@@ -159,15 +171,23 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   <div class="prompt" id="prompt" role="status" aria-live="polite"></div>
 
   <div class="board">
-    <div class="card station idle" id="stationCard"></div>
+    <div class="card" id="powerCard">
+      <h3>Power distribution · MW delivered / needed</h3>
+      <div class="systems" id="systems"></div>
+      <div class="ctrl"><button id="pDn" aria-label="Lower power">−</button><div class="readout" id="pRead"></div><button id="pUp" aria-label="Raise power">+</button></div>
+      <div id="pState"></div>
+      <div class="seg"><button class="btn" id="pMatch">Match load</button></div>
+      <div class="hint"><kbd>1</kbd>–<kbd>5</kbd> pick a system · <kbd>Q</kbd>/<kbd>E</kbd> lower or raise · <kbd>R</kbd> match load</div>
+    </div>
     <div class="card">
       <h3>Bridge alerts</h3>
       <ul class="alerts" id="alerts"></ul>
     </div>
-    <div class="card">
-      <h3>Power systems · MW delivered / needed</h3>
-      <div class="systems" id="systems"></div>
+    <div class="card deck-card">
+      <h3>Deck 7 · click a room to walk there</h3>
+      <div class="deck" id="deck"></div>
     </div>
+    <div class="card station idle" id="stationCard"></div>
     <div class="card">
       <h3>Reactor</h3>
       <div class="kv">
@@ -184,23 +204,24 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   <details>
     <summary>Engineer's manual</summary>
     <ul>
-      <li><b>Consoles</b> along the back wall set power for Shields, Weapons, Life support, Engines and Repair. On each console screen the bar is the power you set and the white mark is what the system needs right now.</li>
-      <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan and get to the right console.</li>
+      <li><b>Power panel.</b> Set power for Shields, Weapons, Life support, Engines and Repair from anywhere on the ship. Pick a system (click it or press <kbd>1</kbd>–<kbd>5</kbd>), then <kbd>Q</kbd>/<kbd>E</kbd> or the − / + buttons; <kbd>R</kbd> matches the load. The bar is what the system gets and the white mark is what it needs right now.</li>
+      <li><b>The deck.</b> Engineering (reactor, breakers, repair bay, cargo lift) opens onto the corridor, which leads to Storage, the Med bay, the Bridge and Weapons. Walk through a door, or click a room on the deck map and you'll walk there. The Bridge, Weapons and Med bay run automatically for now; manual stations come in later updates.</li>
+      <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan your power and be in the right place.</li>
       <li><b>The shift.</b> The first minute is calm. Partway through, sensors pick up an enemy fleet well before it arrives, and things go quiet beforehand. Use the lull to refuel, finish repairs and set your power. The fleet attacks in three waves, each needing different power. Afterwards you get a short breather. In the last 40 seconds the jump drive spools: engines need 18 MW extra, and the drive only charges as fast as the engines are powered.</li>
-      <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the console says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel.</li>
+      <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the power panel says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel in Engineering.</li>
       <li><b>Listen.</b> The reactor hum rises with load and spins down if it goes offline. A buzz means a breaker is about to trip. If the air vents go quiet, life support is short of power. A sonar ping is an unknown contact; a two-tone klaxon means the hull is below 40%. The jump drive whines louder as it nears full charge.</li>
       <li><b>Reactor.</b> Total allocation can't exceed reactor output. Low coolant cuts output; an empty fuel rod shuts it down.</li>
-      <li><b>Refuelling.</b> When the rod is below 40%, eject it at the fuel port (left side of the reactor). Drop it in the disposal chute, take a fresh rod from the fuel rack and load it. Coolant works the same way on the right side. Ejecting cuts power until the new one is in, so pick a quiet moment.</li>
+      <li><b>Refuelling.</b> Fresh fuel rods and coolant canisters are in Storage. When the rod is below 40%, bring a fresh one to the fuel port (left side of the reactor) and swap it. The reactor re-primes for a few seconds with no output, so pick a quiet moment. The spent rod is left on the port tray; take it to the disposal chute in Storage before your next swap. Coolant works the same way on the right side, and output drops to 45% while it re-primes.</li>
       <li><b>Repair</b> needs power whenever the hull is damaged. Powered repair slowly restores the hull.</li>
-      <li><b>Damaged parts.</b> Alerts can knock out a shield emitter, the turret or a thruster, more likely if that system was short of power during the alert. Only 65% of a damaged system's power gets through, so it can't fully meet a big alert. The bridge sends the part down the <b>cargo lift</b> (right wall, top).</li>
-      <li><b>Repair bay</b> (right wall, below the lift). Put a damaged part in and it takes a fixed 12 MW off the top of reactor output while it works; the consoles share what is left. If the consoles were already using that power, they all get cut back, so free up 12 MW first (the console card shows "Reactor free"). You can take a part out mid-repair and keep its progress. Carry the repaired part back to the cargo lift to install it.</li>
+      <li><b>Damaged parts.</b> Alerts can knock out a shield emitter, the turret or a thruster, more likely if that system was short of power during the alert. Only 65% of a damaged system's power gets through, so it can't fully meet a big alert. The bridge sends the part down the <b>cargo lift</b> (Engineering, right wall, top).</li>
+      <li><b>Repair bay</b> (right wall, below the lift). Put a damaged part in and it takes a fixed 12 MW off the top of reactor output while it works; the consoles share what is left. If the consoles were already using that power, they all get cut back, so free up 12 MW first (the power panel shows "Reactor free"). You can take a part out mid-repair and keep its progress. Carry the repaired part back to the cargo lift to install it.</li>
     </ul>
   </details>
 </div>
 
 <script>
 (() => {
-  const COLS = 15, ROWS = 10, SPEED = 4.2, R = 0.3;
+  const COLS = 15, ROWS = 10, SPEED = 4.8, R = 0.3;
   const K = 0.7, HF = 0.85; // depth squash and height scale for the 3/4 view
   const $ = s => document.querySelector(s);
   const cv = $('#room'), ctx = cv.getContext('2d');
@@ -211,13 +232,13 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const SYS = [
-    { id: 'shields', name: 'Shields', base: 6, w: 0.055, x: 1 },
-    { id: 'weapons', name: 'Weapons', base: 2, w: 0.03, x: 4 },
-    { id: 'life', name: 'Life support', base: 12, w: 0.05, x: 7 },
-    { id: 'engines', name: 'Engines', base: 14, w: 0.035, x: 10 },
-    { id: 'repair', name: 'Repair', base: 0, w: 0, x: 13 }
+    { id: 'shields', name: 'Shields', base: 6, w: 0.055 },
+    { id: 'weapons', name: 'Weapons', base: 2, w: 0.03 },
+    { id: 'life', name: 'Life support', base: 12, w: 0.05 },
+    { id: 'engines', name: 'Engines', base: 14, w: 0.035 },
+    { id: 'repair', name: 'Repair', base: 0, w: 0 }
   ];
-  const MAXALLOC = 40, TRIP = 3.5, SETTLE = 5;
+  const MAXALLOC = 40, TRIP = 3.5, SETTLE = 5, PRIME = 2.5; // PRIME: seconds the reactor re-primes after a swap
   const PART = { shields: 'Shield emitter', weapons: 'Turret', engines: 'Thruster' };
   const EFF = 0.65, BAYDRAW = 12; // damaged systems pass 65% of their power; a working bay takes 12 MW before the consoles
   const EVENTS = [
@@ -249,33 +270,61 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     { cap: 80, gap: [18, 26], dmg: 1, maxEv: 2, time: 330, scan: 6, warn: 6, brk: 0.5, fix: 24, crisis: 1 }
   ];
 
-  // ---------- map ----------
-  const obstacle = new Set();
+  // ---------- deck ----------
+  // Six rooms, each a 15×10 grid, joined by doors. A door sits just outside its room's grid: [x, -1] in the
+  // back wall, [x, ROWS] in the front, [-1, y] on the left, [COLS, y] on the right. Walking into one takes you
+  // to the linked room, arriving through that room's door back.
   const key = (x, y) => x + ',' + y;
-  for (let x = 6; x <= 8; x++) for (let y = 4; y <= 6; y++) obstacle.add(key(x, y));
-  const ST = [];
-  SYS.forEach(s => ST.push({ type: 'console', sys: s.id, label: s.name, tile: [s.x, 0], use: [s.x, 1] }));
-  ST.push({ type: 'breaker', label: 'Breakers', tile: [0, 7], use: [1, 7] });
-  ST.push({ type: 'fuelport', label: 'Fuel port', tile: [6, 5], use: [5, 5] });
-  ST.push({ type: 'coolport', label: 'Coolant port', tile: [8, 5], use: [9, 5] });
-  ST.push({ type: 'chute', label: 'Disposal', tile: [3, 9], use: [3, 8] });
-  ST.push({ type: 'fuelrack', label: 'Fuel rack', tile: [10, 9], use: [10, 8] });
-  ST.push({ type: 'coolrack', label: 'Coolant', tile: [12, 9], use: [12, 8] });
-  ST.push({ type: 'bay', label: 'Repair bay', tile: [14, 5], use: [13, 5] });
-  ST.push({ type: 'lift', label: 'Cargo lift', tile: [14, 2], use: [13, 2] });
-  ST.forEach(s => { if (s.type !== 'fuelport' && s.type !== 'coolport') obstacle.add(key(s.tile[0], s.tile[1])); });
-  obstacle.add(key(0, 6)); obstacle.add(key(14, 4)); obstacle.add(key(14, 1));
-  const walkable = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !obstacle.has(key(x, y));
+  const ROOMS = {
+    eng: { name: 'Engineering', spot: [7, 8], doors: [{ at: [7, -1], to: 'hall' }] },
+    hall: { name: 'Corridor', spot: [7, 5], doors: [{ at: [7, ROWS], to: 'eng' }, { at: [3, -1], to: 'bridge' }, { at: [11, -1], to: 'weapons' }, { at: [-1, 5], to: 'med' }, { at: [COLS, 5], to: 'store' }] },
+    store: { name: 'Storage', spot: [5, 6], doors: [{ at: [-1, 5], to: 'hall' }] },
+    med: { name: 'Med bay', spot: [9, 6], doors: [{ at: [COLS, 5], to: 'hall' }] },
+    bridge: { name: 'Bridge', spot: [6, 7], doors: [{ at: [7, ROWS], to: 'hall' }] },
+    weapons: { name: 'Weapons', spot: [7, 6], doors: [{ at: [7, ROWS], to: 'hall' }] }
+  };
+  // furniture: tile rect [x, y, w, d], height, kind (drawn as boxes and blocking those tiles)
+  const DECOR = {
+    hall: [[0, 0, 1, 1, 1, 'planter'], [14, 0, 1, 1, 1, 'planter'], [0, 9, 1, 1, 1, 'planter'], [14, 9, 1, 1, 1, 'planter'],
+      [5, 3, 1, 1, 1.9, 'pillar'], [9, 3, 1, 1, 1.9, 'pillar'], [5, 7, 1, 1, 1.9, 'pillar'], [9, 7, 1, 1, 1.9, 'pillar']],
+    store: [[1, 0, 2, 1, 0.9, 'crate'], [3, 0, 1, 1, 1.4, 'crate'], [10, 0, 3, 1, 1.1, 'crate'], [13, 0, 2, 2, 1.6, 'crate'], [12, 8, 3, 2, 0.8, 'crate'], [1, 8, 2, 2, 1.2, 'crate']],
+    med: [[1, 0, 2, 2, 0.55, 'bed'], [4, 0, 2, 2, 0.55, 'bed'], [7, 0, 2, 2, 0.55, 'bed'], [10, 0, 2, 2, 0.55, 'bed'], [0, 8, 2, 2, 1.4, 'cabinet']],
+    bridge: [[1, 1, 2, 1, 1, 'console'], [12, 1, 2, 1, 1, 'console'], [7, 6, 1, 1, 0.9, 'chair']],
+    weapons: [[0, 1, 1, 3, 1.3, 'rack'], [14, 1, 1, 3, 1.3, 'rack'], [2, 6, 1, 1, 0.9, 'crate'], [12, 6, 1, 1, 0.9, 'crate']]
+  };
+  const ST = [
+    { room: 'eng', type: 'breaker', label: 'Breakers', tile: [0, 7], use: [1, 7], block: [[0, 6]] },
+    { room: 'eng', type: 'fuelport', label: 'Fuel port', tile: [6, 5], use: [5, 5], noBlock: true },
+    { room: 'eng', type: 'coolport', label: 'Coolant port', tile: [8, 5], use: [9, 5], noBlock: true },
+    { room: 'eng', type: 'bay', label: 'Repair bay', tile: [14, 5], use: [13, 5], block: [[14, 4]] },
+    { room: 'eng', type: 'lift', label: 'Cargo lift', tile: [14, 2], use: [13, 2], block: [[14, 1]] },
+    { room: 'store', type: 'fuelrack', label: 'Fuel rack', tile: [4, 3], use: [4, 4] },
+    { room: 'store', type: 'coolrack', label: 'Coolant', tile: [7, 3], use: [7, 4] },
+    { room: 'store', type: 'chute', label: 'Disposal', tile: [10, 3], use: [10, 4] },
+    { room: 'bridge', type: 'post', sys: 'engines', label: 'Helm', tile: [7, 3], use: [7, 4], soon: 'Helm on autopilot. Manual flying arrives in a later update.' },
+    { room: 'weapons', type: 'post', sys: 'weapons', label: 'Gunnery', tile: [7, 3], use: [7, 4], soon: 'The turret is firing on its own. Manual targeting arrives in the next update.' },
+    { room: 'med', type: 'post', sys: 'life', label: 'Med console', tile: [7, 5], use: [7, 6], soon: 'No patients yet. Crew triage arrives in a later update.' }
+  ];
+  for (const id in ROOMS) ROOMS[id].obs = new Set();
+  for (let x = 6; x <= 8; x++) for (let y = 4; y <= 6; y++) ROOMS.eng.obs.add(key(x, y));
+  ST.forEach(s => { const o = ROOMS[s.room].obs; if (!s.noBlock) o.add(key(...s.tile)); (s.block || []).forEach(t => o.add(key(...t))); });
+  for (const id in DECOR) DECOR[id].forEach(([x, y, w, d]) => { for (let i = x; i < x + w; i++) for (let j = y; j < y + d; j++) ROOMS[id].obs.add(key(i, j)); });
+  const inGrid = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+  const room = () => ROOMS[G ? G.room : 'eng'];
+  const doorAt = (x, y) => room().doors.find(d => d.at[0] === x && d.at[1] === y);
+  const walkable = (x, y) => inGrid(x, y) ? !room().obs.has(key(x, y)) : !!doorAt(x, y);
 
+  // shortest path inside the current room; a door tile is only allowed as the destination
   function bfs(from, to) {
+    const ok = (x, y) => inGrid(x, y) ? !room().obs.has(key(x, y)) : x === to[0] && y === to[1] && !!doorAt(x, y);
     const q = [from], prev = new Map([[key(...from), null]]);
     while (q.length) {
       const c = q.shift();
       if (c[0] === to[0] && c[1] === to[1]) break;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         const n = [c[0] + dx, c[1] + dy];
-        if (!walkable(...n) || prev.has(key(...n))) continue;
-        if (dx && dy && (!walkable(c[0] + dx, c[1]) || !walkable(c[0], c[1] + dy))) continue;
+        if (!ok(...n) || prev.has(key(...n))) continue;
+        if (dx && dy && (!ok(c[0] + dx, c[1]) || !ok(c[0], c[1] + dy))) continue;
         prev.set(key(...n), c); q.push(n);
       }
     }
@@ -283,6 +332,13 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const path = []; let c = to;
     while (c) { path.unshift(c); c = prev.get(key(...c)); }
     return path.slice(1);
+  }
+  // first room to step into on the way from one room to another
+  function nextRoomToward(from, to) {
+    const q = [from], prev = { [from]: null };
+    while (q.length) { const r = q.shift(); if (r === to) break; ROOMS[r].doors.forEach(d => { if (!(d.to in prev)) { prev[d.to] = r; q.push(d.to); } }); }
+    let r = to; while (prev[r] !== from) r = prev[r];
+    return r;
   }
 
   // ---------- state ----------
@@ -293,14 +349,14 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const D = DIFF[diff];
     G = {
       D, t: 0, jump: D.time, hull: 100, over: null, dmgRate: 0,
-      p: { x: 7.5, y: 8.5, path: null, hold: null, face: 1, walk: 0 },
+      room: 'eng', sel: 'shields', p: { x: 7.5, y: 8.5, path: null, dest: null, hold: null, face: 1, walk: 0 },
       sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, delivered: 0, tripped: false, overload: 0, grace: 0, drift: 0, damaged: false }])),
-      fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3,
+      fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3, trayFuel: false, trayCool: false, primeF: 0, primeC: 0,
       lift: [], bay: { part: null, done: false }, prog: { shields: 0, weapons: 0, engines: 0 }, bayPow: 0, fixed: 0,
       crisis: null, spool: false, breatherUntil: 0,
       events: [], nextEvent: 25, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
     };
-    resetFX();
+    resetFX(); $('#roomTag').textContent = ROOMS.eng.name; lastStation = undefined;
     $('#startBox').hidden = true; $('#endBox').hidden = true;
     paused = false; $('#pause').textContent = 'Pause';
   }
@@ -400,9 +456,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   // ---------- simulation ----------
   function capacity() {
-    if (!G.fuelIn || G.fuel <= 0) return 0;
+    if (!G.fuelIn || G.fuel <= 0 || G.primeF > 0) return 0;
     let c = G.D.cap;
-    if (!G.coolIn) c *= 0.45;
+    if (!G.coolIn || G.primeC > 0) c *= 0.45;
     else if (G.cool < 25) c *= 0.5 + 0.5 * (G.cool / 25);
     return c;
   }
@@ -414,6 +470,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   function step(dt) {
     if (G.over || paused) return;
     G.t += dt;
+    G.primeF = Math.max(0, G.primeF - dt); G.primeC = Math.max(0, G.primeC - dt);
     // during the spool the drive only charges as fast as the engines are powered
     const spooling = G.events.some(e => e.type === 'spool' && e.eta <= 0);
     G.jump -= dt * (spooling ? clamp(ratio('engines'), 0, 1) : 1);
@@ -542,33 +599,53 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const g = geom(), p = partSpot(id, g); spark(p.x, p.y, COL.hazard, 26, 200); spark(p.x, p.y, '#ffffff', 6, 80); FX.bigHit = 0.4; noiseHit(0.6, 0.2, 2500, 90);
   }
   function hit(n, label) { G.hull -= n; G.shake = 0.4; tone(55, 0.4, 0.2, 'sine'); noiseHit(0.7, 0.3, 1800, 60); float(null, label); FX.bigHit = 1; }
-  function float(sysId, text) {
-    const s = sysId ? SYS.find(x => x.id === sysId) : null;
-    G.floats.push({ x: s ? s.x + 0.5 : 7.5, y: s ? 1.2 : 7.5, text, t: 1.8 });
-  }
+  function float(sysId, text) { G.floats.push({ x: 7.5, y: sysId ? 1.2 : 7.5, text, t: 1.8 }); }
 
   function movePlayer(dt) {
     const p = G.p;
     let vx = 0, vy = 0;
     if (keys.has('left')) vx -= 1; if (keys.has('right')) vx += 1;
     if (keys.has('up')) vy -= 1; if (keys.has('down')) vy += 1;
-    if (vx || vy) { p.path = null; const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
-    else if (p.path && p.path.length) {
-      const [tx, ty] = p.path[0]; const cx = tx + 0.5, cy = ty + 0.5;
-      const dx = cx - p.x, dy = cy - p.y, d = Math.hypot(dx, dy);
-      if (d < 0.08) { p.path.shift(); return; }
-      const stepLen = Math.min(d, SPEED * dt);
-      p.x += dx / d * stepLen; p.y += dy / d * stepLen;
-      if (Math.abs(dx) > 0.05) p.face = dx > 0 ? 1 : -1;
-      p.walk += dt; return;
-    }
     if (vx || vy) {
+      p.path = null; p.dest = null;
+      const l = Math.hypot(vx, vy); vx /= l; vy /= l;
       if (vx) p.face = vx > 0 ? 1 : -1;
       p.walk += dt;
       const nx = p.x + vx * SPEED * dt, ny = p.y + vy * SPEED * dt;
       if (free(nx, p.y)) p.x = nx;
       if (free(p.x, ny)) p.y = ny;
-    }
+    } else if (p.path && p.path.length) {
+      const [tx, ty] = p.path[0], cx = tx + 0.5, cy = ty + 0.5;
+      const dx = cx - p.x, dy = cy - p.y, d = Math.hypot(dx, dy);
+      if (d < 0.08) p.path.shift();
+      else {
+        const stepLen = Math.min(d, SPEED * dt);
+        p.x += dx / d * stepLen; p.y += dy / d * stepLen;
+        if (Math.abs(dx) > 0.05) p.face = dx > 0 ? 1 : -1;
+        p.walk += dt;
+      }
+    } else if (p.dest) routeStep();
+    // stepped into a doorway: move to the next room
+    const fx = Math.floor(p.x), fy = Math.floor(p.y);
+    if (!inGrid(fx, fy)) { const d = doorAt(fx, fy); if (d) enterRoom(d.to); }
+  }
+  function enterRoom(to) {
+    const from = G.room, back = ROOMS[to].doors.find(d => d.to === from);
+    G.room = to;
+    G.p.x = clamp(back.at[0], 0, COLS - 1) + 0.5; G.p.y = clamp(back.at[1], 0, ROWS - 1) + 0.5; G.p.path = null;
+    noiseHit(0.35, 0.05, 2400, 300); tone(320, 0.12, 0.015, 'sine');
+    $('#roomTag').textContent = ROOMS[to].name;
+    routeStep();
+  }
+  // walk to a room (and a tile in it), through as many doors as it takes
+  function travel(roomId, tile) { G.p.dest = { room: roomId, tile: tile || ROOMS[roomId].spot }; routeStep(); }
+  function routeStep() {
+    const d = G.p.dest; if (!d) return;
+    const cur = [Math.floor(G.p.x), Math.floor(G.p.y)];
+    if (G.room === d.room) { G.p.path = bfs(cur, d.tile); G.p.dest = null; return; }
+    const door = room().doors.find(x => x.to === nextRoomToward(G.room, d.room));
+    G.p.path = bfs(cur, door.at);
+    if (!G.p.path) G.p.dest = null;
   }
   function free(x, y) {
     for (const [ox, oy] of [[-R, -R], [R, -R], [-R, R], [R, R]]) if (!walkable(Math.floor(x + ox), Math.floor(y + oy))) return false;
@@ -577,7 +654,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   function nearStation() {
     if (!G) return null;
     let best = null, bd = 0.85;
-    ST.forEach(s => { const d = Math.hypot(G.p.x - (s.use[0] + 0.5), G.p.y - (s.use[1] + 0.5)); if (d < bd) { bd = d; best = s; } });
+    ST.forEach(s => { if (s.room !== G.room) return; const d = Math.hypot(G.p.x - (s.use[0] + 0.5), G.p.y - (s.use[1] + 0.5)); if (d < bd) { bd = d; best = s; } });
     return best;
   }
 
@@ -586,17 +663,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   function say(m) { msg = m; msgT = 2.2; }
   function adjust(delta) {
     if (!G || G.over || paused) return;
-    const s = nearStation(); if (!s || s.type !== 'console') return;
-    const st = G.sys[s.sys];
-    const room = capacity() - bayLoad() - (allocSum() - st.alloc);
+    const st = G.sys[G.sel];
+    const free = capacity() - bayLoad() - (allocSum() - st.alloc);
     let v = clamp(st.alloc + delta, 0, MAXALLOC);
-    if (delta > 0 && v > room) { v = Math.max(st.alloc, Math.floor(room)); if (v === st.alloc) say(bayLoad() ? 'Reactor at full allocation (the repair bay is taking 12 MW). Take power from another system.' : 'Reactor at full allocation. Take power from another system.'); }
+    if (delta > 0 && v > free) { v = Math.max(st.alloc, Math.floor(free)); if (v === st.alloc) say(bayLoad() ? 'Reactor at full allocation (the repair bay is taking 12 MW). Take power from another system.' : 'Reactor at full allocation. Take power from another system.'); }
     st.alloc = v; click();
   }
   function matchLoad() {
     if (!G || G.over || paused) return;
-    const s = nearStation(); if (!s || s.type !== 'console') return;
-    const st = G.sys[s.sys];
+    const st = G.sys[G.sel];
     let target = 0;
     if (st.demand > 0) target = Math.min(Math.ceil(st.demand / (st.damaged ? EFF : 1)) + 1, Math.floor(limitOf(st.demand)));
     adjust(target - st.alloc);
@@ -614,20 +689,26 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         return;
       }
       case 'fuelport':
-        if (p.hold === 'freshFuel' && !G.fuelIn) { G.fuelIn = true; G.fuel = 100; p.hold = null; say('Fresh rod loaded. Reactor online.'); click(); return; }
-        if (!p.hold && G.fuelIn) {
-          if (G.fuel > 40) { say(`Rod still at ${Math.round(G.fuel)}%. Eject below 40%.`); return; }
-          G.fuelIn = false; G.fuel = 0; p.hold = 'spentFuel'; say('Spent rod ejected. Reactor offline until you load a fresh one!'); clunk(); return;
+        if (p.hold === 'freshFuel') {
+          if (G.fuel > 40) { say(`Rod still at ${Math.round(G.fuel)}%. Swap below 40%.`); return; }
+          if (G.trayFuel) { say('The port tray still holds a spent rod. Take it to the disposal chute first.'); return; }
+          G.fuel = 100; G.trayFuel = true; G.primeF = PRIME; p.hold = null; clunk();
+          say('Fresh rod in. Reactor re-priming; the spent rod is on the port tray.'); return;
         }
-        if (p.hold === 'freshFuel') say('Eject the spent rod first.'); else if (p.hold) say('Your hands are full.'); else say('No rod loaded. Bring a fresh one from the fuel rack.');
+        if (!p.hold && G.trayFuel) { G.trayFuel = false; p.hold = 'spentFuel'; click(); say('Took the spent rod. The disposal chute is in Storage.'); return; }
+        if (p.hold) say('Your hands are full.');
+        else say(G.fuel > 40 ? `Rod at ${Math.round(G.fuel)}%. Bring a fresh one from Storage once it drops below 40%.` : 'Bring a fresh rod from the fuel rack in Storage.');
         return;
       case 'coolport':
-        if (p.hold === 'freshCool' && !G.coolIn) { G.coolIn = true; G.cool = 100; p.hold = null; say('Fresh coolant connected.'); click(); return; }
-        if (!p.hold && G.coolIn) {
+        if (p.hold === 'freshCool') {
           if (G.cool > 40) { say(`Coolant still at ${Math.round(G.cool)}%. Swap below 40%.`); return; }
-          G.coolIn = false; G.cool = 0; p.hold = 'spentCool'; say('Spent coolant out. Output limited until you connect fresh coolant!'); clunk(); return;
+          if (G.trayCool) { say('The port tray still holds a spent canister. Take it to the disposal chute first.'); return; }
+          G.cool = 100; G.trayCool = true; G.primeC = PRIME; p.hold = null; clunk();
+          say('Fresh coolant in. Output limited while it primes; the spent canister is on the port tray.'); return;
         }
-        if (p.hold === 'freshCool') say('Remove the spent canister first.'); else if (p.hold) say('Your hands are full.'); else say('No canister connected. Bring one from the coolant tanks.');
+        if (!p.hold && G.trayCool) { G.trayCool = false; p.hold = 'spentCool'; click(); say('Took the spent canister. The disposal chute is in Storage.'); return; }
+        if (p.hold) say('Your hands are full.');
+        else say(G.cool > 40 ? `Coolant at ${Math.round(G.cool)}%. Bring a fresh canister from Storage once it drops below 40%.` : 'Bring a fresh canister from the coolant tanks in Storage.');
         return;
       case 'fuelrack':
         if (!p.hold) { if (G.spareFuel > 0) { G.spareFuel--; p.hold = 'freshFuel'; say('Picked up a fresh fuel rod.'); click(); } else say('No spare rods left.'); return; }
@@ -669,8 +750,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         const id = G.lift.shift(); p.hold = 'broken_' + id; click();
         say(`Picked up the damaged ${PART[id].toLowerCase()}. Take it to the repair bay.`); return;
       }
-      case 'console':
-        matchLoad(); return;
+      case 'post':
+        say(s.soon); return;
     }
   }
 
@@ -706,7 +787,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   function rgba(hex, a) { const n = parseInt(hex.replace('#', ''), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
   function shade(hex, f) { const n = parseInt(hex.replace('#', ''), 16); const c = v => clamp(Math.round(v * f), 0, 255); return `rgb(${c(n >> 16 & 255)},${c(n >> 8 & 255)},${c(n & 255)})`; }
 
-  // ---------- engine room, 3/4 view ----------
+  // ---------- rooms, 3/4 view ----------
   let RW = 700, RH = 500, ts = 40, ox = 12, oy = 80;
   const X = x => ox + x * ts, Y = y => oy + y * ts * K, Hh = h => h * ts * HF;
   function resizeRoom() {
@@ -755,23 +836,26 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     c.fillStyle = rgba(COL.hazard, .12);
     c.fillRect(X(0), Y(2.0), COLS * ts, ts * K * 0.08); c.fillRect(X(0), Y(7.8), COLS * ts, ts * K * 0.08);
     if (!G) { c.restore(); return; }
+    const near = nearStation();
+    if (WALL[G.room]) WALL[G.room](c, now);
+    drawDoors(c, false);
 
-    // power cables in floor channels
-    SYS.forEach((s, i) => {
+    // engineering: power cables in floor channels, from the reactor to the power bus on the back wall
+    if (G.room === 'eng') SYS.forEach((s, i) => {
       const st = G.sys[s.id], col = sysColor(s.id);
       const lvl = clamp(st.delivered / 30, 0, 1);
-      const bx = 7.5 + (i - 2) * 0.22;
+      const bx = 7.5 + (i - 2) * 0.22, tx = busX(i) + 0.5;
       c.strokeStyle = rgba(col, 0.15 + 0.55 * lvl); c.lineWidth = Math.max(2, ts * 0.07);
       c.setLineDash(st.delivered > 0 ? [ts * 0.25, ts * 0.2] : []);
       c.lineDashOffset = -(now / 1000) * ts * (0.5 + lvl * 2);
-      c.beginPath(); c.moveTo(X(bx), Y(4)); c.lineTo(X(bx), Y(2.3 - i * 0.12)); c.lineTo(X(s.x + 0.5), Y(2.3 - i * 0.12)); c.lineTo(X(s.x + 0.5), Y(0.6)); c.stroke();
+      c.beginPath(); c.moveTo(X(bx), Y(4)); c.lineTo(X(bx), Y(2.3 - i * 0.12)); c.lineTo(X(tx), Y(2.3 - i * 0.12)); c.lineTo(X(tx), Y(0.05)); c.stroke();
       c.setLineDash([]);
     });
 
-    const near = nearStation();
     const items = [];
-    ST.forEach(s => { if (s.type !== 'fuelport' && s.type !== 'coolport') items.push({ z: stationZ(s), draw: () => drawStation(s, s === near, now) }); });
-    items.push({ z: 7.0, draw: () => drawReactor(now, near) });
+    ST.forEach(s => { if (s.room === G.room && s.type !== 'fuelport' && s.type !== 'coolport') items.push({ z: stationZ(s), draw: () => drawStation(s, s === near, now) }); });
+    (DECOR[G.room] || []).forEach(d => items.push({ z: d[1] + d[3] - 0.05, draw: () => drawDecor(c, d) }));
+    if (G.room === 'eng') items.push({ z: 7.0, draw: () => drawReactor(now, near) });
     items.push({ z: G.p.y + 0.01, draw: () => drawPlayer(now) });
     items.sort((a, b) => a.z - b.z).forEach(i => i.draw());
 
@@ -787,38 +871,133 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       c.fillText(f.text, X(f.x), Y(f.y) - Hh(1.4) - (1.8 - f.t) * ts * 0.4);
       c.globalAlpha = 1;
     });
-    // front lip
+    // front lip, with any front doors cut into it
     c.fillStyle = '#0f1419'; c.fillRect(0, Y(ROWS), RW, RH - Y(ROWS));
+    drawDoors(c, true);
     c.restore();
   }
-  function stationZ(s) { return s.type === 'console' ? 0.6 : s.tile[1] + 0.95; }
+  function stationZ(s) { return s.tile[1] + 0.95; }
+  const busX = i => 9.3 + i * 0.85; // power bus columns on the engineering back wall
+
+  // doors: an opening in the back wall, a gap in the front lip, or a doorway in a side wall; labelled with where they go
+  function drawDoors(c, front) {
+    c.textBaseline = 'middle';
+    room().doors.forEach(d => {
+      const [x, y] = d.at, name = ROOMS[d.to].name.toUpperCase(), lbl = `600 ${Math.max(8, ts * 0.2)}px Barlow, sans-serif`;
+      const end = G.p.path && G.p.path[G.p.path.length - 1], hot = end && end[0] === x && end[1] === y;
+      if (y < 0 && !front) {
+        const x0 = X(x + 0.06), w = ts * 0.88, top = Y(0) - Hh(1.95);
+        c.fillStyle = '#05080b'; c.fillRect(x0, top, w, Y(0) - top);
+        c.strokeStyle = '#4d5a66'; c.lineWidth = 2; c.strokeRect(x0, top, w, Y(0) - top);
+        for (let i = 0; i < 6; i++) { c.fillStyle = i % 2 ? '#1a1a1a' : rgba(COL.hazard, .75); c.fillRect(x0 + i * w / 6, top - ts * 0.08, w / 6, ts * 0.08); }
+        c.fillStyle = hot ? COL.hazard : COL.muted; c.font = lbl; c.textAlign = 'center'; c.fillText(name, x0 + w / 2, top - ts * 0.26);
+        d.rect = { x: x0, y: top - ts * 0.4, w, h: Y(0.6) - top + ts * 0.4 };
+      } else if (y >= ROWS && front) {
+        const x0 = X(x + 0.06), w = ts * 0.88;
+        c.fillStyle = '#05080b'; c.fillRect(x0, Y(ROWS), w, RH - Y(ROWS));
+        c.fillStyle = rgba(COL.hazard, .3); c.fillRect(x0, Y(ROWS) - 2, w, 2);
+        c.fillStyle = hot ? COL.hazard : COL.muted; c.font = lbl; c.textAlign = 'center'; c.fillText('▼ ' + name, x0 + w / 2, Y(ROWS) - ts * 0.2);
+        d.rect = { x: x0 - ts * 0.3, y: Y(ROWS - 0.7), w: w + ts * 0.6, h: RH - Y(ROWS - 0.7) };
+      } else if ((x < 0 || x >= COLS) && !front) {
+        const left = x < 0, y0 = Y(y), h = ts * K, sx = left ? 0 : X(COLS), sw = left ? X(0) : RW - X(COLS);
+        c.fillStyle = '#05080b'; c.fillRect(sx, y0 - Hh(1.3), sw, Hh(1.3) + h);
+        c.fillStyle = rgba(COL.hazard, .3); c.fillRect(left ? X(0) : X(COLS) - ts * 0.08, y0, ts * 0.08, h);
+        c.fillStyle = hot ? COL.hazard : COL.muted; c.font = lbl; c.textAlign = left ? 'left' : 'right';
+        c.fillText(left ? '◀ ' + name : name + ' ▶', left ? X(0.15) : X(COLS - 0.15), y0 - ts * 0.18);
+        d.rect = { x: left ? 0 : X(COLS - 0.8), y: y0 - Hh(1.3), w: left ? X(0.8) : RW - X(COLS - 0.8), h: Hh(1.3) + h };
+      }
+    });
+  }
+
+  // back-wall fittings for each room
+  function wallPanel(c, x0, x1, h0, h1, fill) {
+    const a = X(x0), b = X(x1), top = Y(0) - Hh(h1), bot = Y(0) - Hh(h0);
+    c.fillStyle = fill || '#151b21'; c.fillRect(a, top, b - a, bot - top);
+    c.strokeStyle = '#46525e'; c.lineWidth = 2; c.strokeRect(a, top, b - a, bot - top);
+    return { x: a, y: top, w: b - a, h: bot - top };
+  }
+  function wallSign(c, text, x, h, col) {
+    c.fillStyle = col || COL.muted; c.font = `700 ${Math.max(10, ts * 0.3)}px Oxanium, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(text, X(x), Y(0) - Hh(h));
+  }
+  const WALL = {
+    eng(c) {
+      const p = wallPanel(c, 8.95, 13.55, 0.25, 2.3);
+      c.fillStyle = COL.muted; c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('POWER BUS', p.x + p.w / 2, p.y + ts * 0.18);
+      SYS.forEach((sy, i) => {
+        const st = G.sys[sy.id], mx = X(busX(i) + 0.3), mw = ts * 0.4, mt = p.y + ts * 0.36, mh = p.h - ts * 0.5;
+        c.fillStyle = '#081016'; c.fillRect(mx, mt, mw, mh);
+        const v = clamp(st.delivered / MAXALLOC, 0, 1);
+        c.fillStyle = st.tripped ? COL.bad : sysColor(sy.id); c.fillRect(mx, mt + mh * (1 - v), mw, mh * v);
+        const dm = mt + mh * (1 - clamp(st.demand / MAXALLOC, 0, 1));
+        c.fillStyle = COL.fg; c.fillRect(mx - 2, dm - 1, mw + 4, 2);
+        if (st.tripped) { c.strokeStyle = COL.bad; c.lineWidth = 2; c.strokeRect(mx, mt, mw, mh); }
+      });
+      wallSign(c, 'ENGINEERING', 3.5, 1.2, '#3b4754');
+    },
+    hall(c) { wallSign(c, 'DECK 7 · JUNCTION', 7.5, 1.35, '#4d5a66'); },
+    store(c) { wallSign(c, 'STORES', 7.5, 1.9, '#4d5a66'); },
+    med(c, now) {
+      const p = wallPanel(c, 12.3, 14.4, 0.7, 2.1);
+      c.fillStyle = '#081016'; c.fillRect(p.x + 4, p.y + 4, p.w - 8, p.h - 8);
+      c.strokeStyle = COL['c-life']; c.lineWidth = 1.5; c.beginPath();
+      for (let i = 0; i <= 40; i++) { const u = i / 40, xx = p.x + 6 + u * (p.w - 12), ph = (u * 3 + now / 900) % 1; const yy = p.y + p.h / 2 - (ph > 0.45 && ph < 0.52 ? p.h * 0.3 : 0); i ? c.lineTo(xx, yy) : c.moveTo(xx, yy); }
+      c.stroke();
+      const cx = X(13.35), cy = Y(0) - Hh(2.35), r = ts * 0.12;
+      c.fillStyle = COL.bad; c.fillRect(cx - r, cy - r * 3, r * 2, r * 6); c.fillRect(cx - r * 3, cy - r, r * 6, r * 2);
+      wallSign(c, 'MED BAY', 6.5, 2.25, '#4d5a66');
+    },
+    bridge(c, now) {
+      const p = wallPanel(c, 2.5, 12.5, 0.5, 2.35, '#03050a');
+      const sp = 0.2 + 1.4 * clamp(ratio('engines'), 0, 1.2);
+      for (let i = 0; i < 40; i++) {
+        const sx = p.x + ((i * 97.3 - now * 0.04 * sp * (1 + (i % 3))) % p.w + p.w) % p.w, sy = p.y + 4 + (i * 53.7 % (p.h - 8));
+        c.fillStyle = `rgba(220,230,255,${0.3 + (i % 3) * 0.25})`; c.fillRect(sx, sy, 1 + (i % 3) * sp, 1.5);
+      }
+      c.fillStyle = COL['c-engines']; c.font = `600 ${Math.max(8, ts * 0.2)}px 'Share Tech Mono', monospace`; c.textAlign = 'left'; c.textBaseline = 'top';
+      c.fillText(`JUMP DRIVE ${Math.round(clamp(1 - G.jump / G.D.time, 0, 1) * 100)}%`, p.x + 8, p.y + 6);
+    },
+    weapons(c, now) {
+      const p = wallPanel(c, 4.5, 10.5, 0.45, 2.35, '#060a0d'), cx = p.x + p.w / 2, cy = p.y + p.h / 2, r = p.h * 0.42;
+      c.strokeStyle = rgba(COL['c-weapons'], .35); c.lineWidth = 1;
+      [1, 0.66, 0.33].forEach(k => { c.beginPath(); c.arc(cx, cy, r * k, 0, Math.PI * 2); c.stroke(); });
+      const a = now / 700; c.strokeStyle = rgba(COL['c-weapons'], .8); c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); c.stroke();
+      const n = FX.fighters.length + FX.torps.length + FX.drones.length;
+      for (let i = 0; i < n; i++) { const b = i * 2.4 + 0.7, d = r * (0.45 + (i % 3) * 0.18); c.fillStyle = COL.bad; c.fillRect(cx + Math.cos(b) * d - 2, cy + Math.sin(b) * d - 2, 4, 4); }
+      c.fillStyle = COL['c-weapons']; c.font = `600 ${Math.max(8, ts * 0.2)}px 'Share Tech Mono', monospace`; c.textAlign = 'left'; c.textBaseline = 'top';
+      c.fillText(n ? `${n} CONTACT${n > 1 ? 'S' : ''}` : 'NO CONTACTS', p.x + 6, p.y + 5);
+    }
+  };
+  // furniture
+  const DECOL = { crate: ['#4a4232', '#3a3426'], planter: ['#2f3b33', '#27312a'], pillar: ['#3a4550', '#2c353e'], bed: ['#c9d1d8', '#7d8994'], cabinet: ['#d8dee3', '#a9b4bd'], console: ['#34404c', '#28323c'], chair: ['#4a5560', '#36404a'], rack: ['#3a3f46', '#2c3036'] };
+  function drawDecor(c, [x, y, w, d, h, kind]) {
+    const [top, front] = DECOL[kind], b = box(c, x + 0.06, y + 0.06, w - 0.12, d - 0.12, h, top, front);
+    const td = b.faceY - b.y;
+    if (kind === 'planter') { c.fillStyle = '#3f7a4f'; [[0.3, 0.4], [0.6, 0.5], [0.45, 0.2]].forEach(([u, v]) => { c.beginPath(); c.arc(b.x + b.w * u, b.y + td * v, ts * 0.16, 0, Math.PI * 2); c.fill(); }); }
+    else if (kind === 'crate') { c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x + 3, b.faceY + 3); c.lineTo(b.x + b.w - 3, b.bottom - 3); c.moveTo(b.x + b.w - 3, b.faceY + 3); c.lineTo(b.x + 3, b.bottom - 3); c.stroke(); }
+    else if (kind === 'bed') { c.fillStyle = '#eef2f5'; c.fillRect(b.x + b.w * 0.08, b.y + td * 0.12, b.w * 0.22, td * 0.76); c.fillStyle = rgba(COL['c-life'], .55); c.fillRect(b.x + b.w * 0.36, b.y + td * 0.1, b.w * 0.58, td * 0.8); }
+    else if (kind === 'cabinet') { const r = ts * 0.07, cx = b.x + b.w / 2, cy = b.faceY + b.faceH * 0.4; c.fillStyle = COL.bad; c.fillRect(cx - r, cy - r * 3, r * 2, r * 6); c.fillRect(cx - r * 3, cy - r, r * 6, r * 2); }
+    else if (kind === 'console') { c.fillStyle = '#081016'; c.fillRect(b.x + b.w * 0.1, b.faceY + b.faceH * 0.15, b.w * 0.8, b.faceH * 0.4); c.fillStyle = rgba(COL['c-shields'], .5); c.fillRect(b.x + b.w * 0.15, b.faceY + b.faceH * 0.3, b.w * 0.4, 2); }
+    else if (kind === 'rack') { c.fillStyle = '#5a4a2a'; for (let i = 0; i < 4; i++) c.fillRect(b.x + b.w * 0.2, b.faceY + b.faceH * (0.12 + i * 0.2), b.w * 0.6, b.faceH * 0.1); }
+  }
 
   function drawStation(s, hl, now) {
     const c = ctx, [tx, ty] = s.tile;
     const ol = hl ? COL.hazard : null;
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    if (s.type === 'console') {
+    if (s.type === 'post') {
+      // a station for a later update: shows its system running on automatic
       const st = G.sys[s.sys], col = sysColor(s.sys);
-      const b = box(c, tx + 0.08, 0.0, 0.84, 0.5, 1.25, '#34404c', '#28323c', ol || (st.tripped ? COL.bad : null));
-      s.rect = { x: b.x, y: b.y, w: b.w, h: b.bottom - b.y };
-      // screen
-      const pad = b.w * 0.1, sw = b.w - pad * 2, sh = b.faceH * 0.42, sy = b.faceY + b.faceH * 0.1;
+      const b = box(c, tx + 0.05, ty + 0.1, 0.9, 0.7, 1.15, '#34404c', '#28323c', ol);
+      s.rect = { x: b.x, y: b.y - ts * 0.4, w: b.w, h: b.bottom - b.y + ts * 0.4 };
+      const pad = b.w * 0.1, sw = b.w - pad * 2, sh = b.faceH * 0.45, sy = b.faceY + b.faceH * 0.12;
       c.fillStyle = '#081016'; c.fillRect(b.x + pad, sy, sw, sh);
-      const v = x => clamp(x / MAXALLOC, 0, 1) * (sw - 4);
-      c.fillStyle = st.tripped ? '#3a3f46' : col; c.fillRect(b.x + pad + 2, sy + sh * 0.55, v(st.alloc), sh * 0.3);
-      c.fillStyle = COL.fg; c.fillRect(b.x + pad + 2 + v(st.demand) - 1, sy + sh * 0.45, 2, sh * 0.5);
-      c.fillStyle = st.tripped ? COL.bad : col; c.font = `600 ${Math.max(8, ts * 0.2)}px 'Share Tech Mono', monospace`;
-      c.fillText(st.tripped ? 'TRIP' : `${st.alloc}/${Math.round(st.demand)}`, b.x + b.w / 2, sy + sh * 0.28);
-      if (st.damaged) { c.fillStyle = COL['c-repair']; c.font = `700 ${Math.max(7, ts * 0.16)}px 'Share Tech Mono', monospace`; c.fillText('PART DMG', b.x + b.w / 2, b.faceY + b.faceH * 0.88); }
-      // status light
-      const deficit = st.demand - st.delivered > 0.5;
-      const settle = st.grace > 0 && st.alloc > limitOf(st.demand);
-      const lc = st.tripped ? COL.bad : st.overload > 0 || settle ? COL.hazard : deficit ? COL.bad : COL.good;
-      const blink = (st.tripped || st.overload > 0 || settle || deficit) ? (Math.sin(now / 120) > 0 ? 1 : 0.3) : 1;
-      c.fillStyle = rgba(lc, blink); c.beginPath(); c.arc(b.x + b.w / 2, b.faceY + b.faceH * 0.72, ts * 0.08, 0, Math.PI * 2); c.fill();
-      // label on the wall above
+      c.fillStyle = col; c.fillRect(b.x + pad + 2, sy + sh * 0.62, clamp(ratio(s.sys), 0, 1) * (sw - 4), sh * 0.22);
+      c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`; c.fillText('AUTO', b.x + b.w / 2, sy + sh * 0.3);
+      c.fillStyle = st.demand - st.delivered > 0.5 ? COL.bad : COL.good; c.beginPath(); c.arc(b.x + b.w / 2, b.faceY + b.faceH * 0.78, ts * 0.07, 0, Math.PI * 2); c.fill();
       c.fillStyle = col; c.font = `700 ${Math.max(9, ts * 0.24)}px Oxanium, sans-serif`;
-      c.fillText(s.label.toUpperCase(), b.x + b.w / 2, b.y - ts * 0.18);
+      c.fillText(s.label.toUpperCase(), b.x + b.w / 2, b.y - ts * 0.2);
       return;
     }
     if (s.type === 'breaker') {
@@ -943,7 +1122,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const c = ctx, cx = X(7.5), cyF = Y(5.5), rx = ts * 1.3, ry = rx * K, h = Hh(1.8);
     const cap = capacity();
     const heat = G.coolIn ? 1 - G.cool / 100 : 1;
-    const coreCol = !G.fuelIn || G.fuel <= 0 ? '#3a3f46' : heat > 0.75 ? COL.bad : heat > 0.5 ? COL.hazard : COL['c-shields'];
+    const coreCol = !G.fuelIn || G.fuel <= 0 || (G.primeF > 0 && Math.sin(now / 60) > 0) ? '#3a3f46' : heat > 0.75 ? COL.bad : heat > 0.5 ? COL.hazard : COL['c-shields'];
     // base plinth
     c.fillStyle = '#20282f'; c.beginPath(); c.ellipse(cx, cyF + ry * 0.15, rx * 1.12, ry * 1.12, 0, 0, Math.PI * 2); c.fill();
     // body
@@ -978,6 +1157,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       c.textAlign = side < 0 ? 'right' : 'left';
       c.fillText(side < 0 ? 'FUEL' : 'COOLANT', px + side * ts * 0.32, py - ts * 0.38);
       s.rect = { x: side < 0 ? cx - rx : cx, y: cyF - h - ry, w: rx, h: h + ry * 2 };
+      if (side < 0 ? G.trayFuel : G.trayCool) drawItem(c, px + side * ts * 0.42, cyF + ry * 0.1, side < 0 ? 'spentFuel' : 'spentCool', ts * 0.5);
     });
   }
   function gaugeV(c, x, y, w, h, v, col) {
@@ -1347,15 +1527,43 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   }
 
   // ---------- HUD ----------
-  const sysEls = {};
+  const sysEls = {}, deckEls = {};
   function buildHUD() {
     const box = $('#systems'); box.innerHTML = '';
-    SYS.forEach(s => {
-      const d = document.createElement('div'); d.className = 'sys';
-      d.innerHTML = `<span class="dot" style="background:var(--c-${s.id})"></span><span class="nm">${s.name}</span><span class="nums"></span><div class="meter"><i style="background:var(--c-${s.id})"></i><span class="dm"></span></div>`;
+    SYS.forEach((s, i) => {
+      const d = document.createElement('button'); d.type = 'button'; d.className = 'sys'; d.setAttribute('aria-pressed', 'false');
+      d.innerHTML = `<span class="dot" style="background:var(--c-${s.id})"></span><span class="nm"><kbd>${i + 1}</kbd>${s.name}</span><span class="nums"></span><span class="meter"><i style="background:var(--c-${s.id})"></i><span class="dm"></span></span>`;
+      d.addEventListener('click', () => select(s.id));
       box.append(d);
-      sysEls[s.id] = { nums: d.querySelector('.nums'), bar: d.querySelector('.meter i'), dm: d.querySelector('.dm') };
+      sysEls[s.id] = { row: d, nums: d.querySelector('.nums'), bar: d.querySelector('.meter i'), dm: d.querySelector('.dm') };
     });
+    hold($('#pDn'), () => adjust(-1)); hold($('#pUp'), () => adjust(1));
+    $('#pMatch').addEventListener('click', matchLoad);
+    const deck = $('#deck'); deck.innerHTML = '';
+    Object.keys(ROOMS).forEach(id => {
+      const b = document.createElement('button'); b.type = 'button'; b.style.gridArea = id;
+      b.innerHTML = `${ROOMS[id].name}<small></small>`;
+      b.addEventListener('click', () => { if (G && !G.over && !paused && $('#startBox').hidden) travel(id); });
+      deck.append(b); deckEls[id] = { b, note: b.querySelector('small') };
+    });
+  }
+  function select(id) { if (!G) return; G.sel = id; click(); hud(); }
+  // a short status line per room on the deck map, and whether it needs you
+  function roomNote(id) {
+    if (id === 'eng') {
+      if (G.primeF > 0 || G.primeC > 0) return ['Re-priming', false];
+      if (SYS.some(x => G.sys[x.id].tripped)) return ['Breaker tripped', true];
+      if (G.bay.done) return ['Repair ready', true];
+      if (G.lift.length) return ['Part at lift', true];
+      if (G.bay.part) return [`Repairing ${Math.floor(G.prog[G.bay.part] * 100)}%`, false];
+      if (G.fuel <= 0) return ['Out of fuel', true];
+      return [`Reactor ${Math.round(capacity())} MW`, false];
+    }
+    if (id === 'store') return G.fuel < 40 || G.cool < 40 ? ['Refuel due', true] : [`${G.spareFuel} rods · ${G.spareCool} coolant`, false];
+    if (id === 'bridge') return ['Autopilot', false];
+    if (id === 'weapons') return ['Auto turret', false];
+    if (id === 'med') return ['No patients', false];
+    return ['', false];
   }
   function chipFor(st) {
     const dmg = st.damaged ? ' <span class="chip dmg">DAMAGED</span>' : '';
@@ -1394,6 +1602,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     al.innerHTML = (ev || '<li class="none">No active threats</li>') + parts;
     SYS.forEach(s => {
       const st = G.sys[s.id], e = sysEls[s.id];
+      e.row.setAttribute('aria-pressed', String(G.sel === s.id));
       e.nums.innerHTML = `${Math.round(st.delivered)} / ${Math.round(st.demand)} ${chipFor(st)}`;
       e.bar.style.width = (clamp(st.delivered / MAXALLOC, 0, 1) * 100) + '%';
       e.dm.style.left = `calc(${clamp(st.demand / MAXALLOC, 0, 1) * 100}% - 1px)`;
@@ -1407,16 +1616,24 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     $('#r-fuelBar').style.background = G.fuel < 25 || !G.fuelIn ? 'var(--bad)' : '#c8e64c';
     $('#r-coolBar').style.width = (G.coolIn ? G.cool : 0) + '%';
     $('#r-coolBar').style.background = G.cool < 25 || !G.coolIn ? 'var(--bad)' : 'var(--c-shields)';
-    $('#r-spares').textContent = `${G.spareFuel} rods · ${G.spareCool} coolant`;
+    $('#r-spares').textContent = `${G.spareFuel} rods · ${G.spareCool} cool.`;
+    // power panel: the selected system
+    const ss = G.sys[G.sel], sn = SYS.find(x => x.id === G.sel).name;
+    $('#pRead').innerHTML = `${ss.alloc}<small>${sn} · needs ${Math.round(ss.demand)} · max safe ${Math.floor(limitOf(ss.demand))}${ss.damaged ? ' · part damaged, 65% gets through' : ''}</small>`;
+    $('#pState').innerHTML = chipFor(ss) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum() - bayLoad()))} MW</span>`;
+    // deck map
+    for (const id in deckEls) {
+      const [note, need] = roomNote(id), e = deckEls[id];
+      e.note.textContent = note;
+      e.b.classList.toggle('here', id === G.room); e.b.classList.toggle('need', need && id !== G.room);
+      e.b.setAttribute('aria-label', `${ROOMS[id].name}${id === G.room ? ', you are here' : ''}${note ? ', ' + note : ''}`);
+    }
     const s = nearStation();
-    const sig = s && !G.over ? s.type + (s.sys || '') : null;
-    if (sig !== lastStation) { lastStation = sig; buildStationCard(sig ? s : null); }
-    if (sig && s.type === 'console') {
-      const st = G.sys[s.sys], card = $('#stationCard');
-      card.querySelector('.readout').innerHTML = `${st.alloc}<small>needs ${Math.round(st.demand)} · max safe ${Math.floor(limitOf(st.demand))}${st.damaged ? ' · part damaged, 65% gets through' : ''}</small>`;
-      card.querySelector('.state').innerHTML = chipFor(st) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum() - bayLoad()))} MW</span>`;
-    } else if (sig === 'bay') $('#stationCard .state').textContent = bayStatus();
-    else if (sig === 'lift') {
+    const sig = s && !G.over ? s.room + s.type : null, cardKey = sig || 'idle-' + G.room;
+    if (cardKey !== lastStation) { lastStation = cardKey; buildStationCard(sig ? s : null); }
+    if (s && s.type === 'post') $('#stationCard .state').textContent = `${SYS.find(x => x.id === s.sys).name}: ${Math.round(G.sys[s.sys].delivered)} of ${Math.round(G.sys[s.sys].demand)} MW.`;
+    else if (sig === 'engbay') $('#stationCard .state').textContent = bayStatus();
+    else if (sig === 'englift') {
       const h = G.p.hold;
       $('#stationCard .state').textContent = h && h.startsWith('fixed_') ? `Send the repaired ${PART[h.slice(6)].toLowerCase()} up to install it.`
         : G.lift.length ? 'Waiting: ' + G.lift.map(id => PART[id].toLowerCase()).join(', ') + '.' : 'No parts waiting.';
@@ -1425,37 +1642,34 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     let pr = '';
     if (msgT > 0) pr = msg;
     else if (!G.over && !paused) {
-      if (!G.fuelIn) pr = 'Reactor offline. Load a fresh fuel rod.';
-      else if (G.fuel < 25) pr = 'Fuel rod low. Swap it at the fuel port.';
-      else if (G.coolIn && G.cool < 25) pr = 'Coolant low. Reactor output is dropping.';
+      if (G.fuel <= 0) pr = 'Reactor out of fuel. Bring a fresh rod from Storage to the fuel port.';
+      else if (G.primeF > 0) pr = 'Reactor re-priming after the rod swap.';
+      else if (G.fuel < 25) pr = 'Fuel rod low. Fetch a fresh rod from Storage and swap it at the fuel port.';
+      else if (G.cool < 25) pr = 'Coolant low and output dropping. Fetch a canister from Storage and swap it at the coolant port.';
       else if (G.events.some(e => e.type === 'spool' && e.eta <= 0) && ratio('engines') < 0.97) pr = 'Jump spool stalling. The drive only charges as fast as the engines are powered.';
-      else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel.';
-      else if (G.squeeze) pr = 'Repair bay is taking 12 MW. Consoles are getting less than you set.';
+      else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel in Engineering.';
+      else if (G.squeeze) pr = 'Repair bay is taking 12 MW. Systems are getting less than you set.';
       else if (G.p.hold && G.p.hold.startsWith('broken_')) pr = `Carrying a damaged ${PART[G.p.hold.slice(7)].toLowerCase()}. Put it in the repair bay.`;
       else if (G.p.hold && G.p.hold.startsWith('fixed_')) pr = `Take the repaired ${PART[G.p.hold.slice(6)].toLowerCase()} to the cargo lift to install it.`;
       else if (G.bay.done) pr = 'Repair complete. Collect the part from the repair bay.';
-      else if (G.lift.length) pr = `Damaged ${PART[G.lift[0]].toLowerCase()} waiting at the cargo lift.`;
+      else if (G.lift.length) pr = `Damaged ${PART[G.lift[0]].toLowerCase()} waiting at the cargo lift in Engineering.`;
+      else if (G.p.hold && G.p.hold.startsWith('spent')) pr = 'Carrying a spent item. The disposal chute is in Storage.';
+      else if (G.p.hold === 'freshFuel' || G.p.hold === 'freshCool') pr = `Carrying fresh ${G.p.hold === 'freshFuel' ? 'fuel' : 'coolant'}. Swap it at the reactor in Engineering.`;
+      else if (G.trayFuel && G.fuel < 50) pr = 'A spent rod is still on the fuel port tray. Dispose of it before the next swap.';
     }
     $('#prompt').textContent = pr;
   }
   function buildStationCard(s) {
     const card = $('#stationCard');
     card.innerHTML = '';
-    if (!s) { card.classList.add('idle'); card.innerHTML = '<h3>Station</h3><p class="hint">Walk up to a console, the breaker panel, the reactor ports, the racks, the disposal chute, the cargo lift or the repair bay to use it.</p>'; return; }
+    if (!s) { card.classList.add('idle'); card.innerHTML = `<h3>Station · ${ROOMS[G ? G.room : 'eng'].name}</h3><p class="hint">Walk up to the breaker panel, the reactor ports, the repair bay or cargo lift (Engineering), or the racks and disposal chute (Storage) to use them.</p>`; return; }
     card.classList.remove('idle');
     const t = document.createElement('div'); t.className = 'title'; t.textContent = s.label; card.append(t);
-    if (s.type === 'console') {
-      card.insertAdjacentHTML('beforeend', `<div class="ctrl"><button id="dn" aria-label="Lower power">−</button><div class="readout"></div><button id="up" aria-label="Raise power">+</button></div><div class="state"></div><div class="seg"><button class="btn" id="match">Match load</button></div><div class="hint"><kbd>Q</kbd> lower · <kbd>E</kbd> raise · <kbd>R</kbd> or <kbd>Space</kbd> match load</div>`);
-      hold(card.querySelector('#dn'), () => adjust(-1));
-      hold(card.querySelector('#up'), () => adjust(1));
-      card.querySelector('#match').addEventListener('click', matchLoad);
-    } else {
-      const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Use repair bay', lift: 'Use cargo lift' };
-      const b = document.createElement('button'); b.className = 'btn'; b.textContent = labels[s.type]; b.addEventListener('click', use);
-      const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = 'or press <kbd>Space</kbd>';
-      card.append(b, h);
-      if (s.type === 'bay' || s.type === 'lift') { const st = document.createElement('div'); st.className = 'state hint'; card.append(st); }
-    }
+    const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Use repair bay', lift: 'Use cargo lift', post: 'Check station' };
+    const b = document.createElement('button'); b.className = 'btn'; b.textContent = labels[s.type]; b.addEventListener('click', use);
+    const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = 'or press <kbd>Space</kbd>';
+    card.append(b, h);
+    if (s.type === 'bay' || s.type === 'lift' || s.type === 'post') { const st = document.createElement('div'); st.className = 'state hint'; card.append(st); }
   }
   function hold(btn, fn) {
     let iv = null, to = null;
@@ -1483,6 +1697,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
     if (!$('#startBox').hidden) return;
     if (DIRS[e.code]) { keys.add(DIRS[e.code]); e.preventDefault(); return; }
+    const n = /^(Digit|Numpad)([1-5])$/.exec(e.code);
+    if (n) { select(SYS[Number(n[2]) - 1].id); e.preventDefault(); return; }
     if (e.code === 'KeyQ' || e.code === 'Minus') { adjust(-1); e.preventDefault(); }
     else if (e.code === 'KeyE' || e.code === 'Equal') { adjust(1); e.preventDefault(); }
     else if (e.code === 'KeyR') { matchLoad(); e.preventDefault(); }
@@ -1494,14 +1710,18 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!G || G.over || paused) return;
     const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     let target = null;
-    // stations first, front-most first
-    const hits = ST.filter(s => s.rect && mx >= s.rect.x && mx <= s.rect.x + s.rect.w && my >= s.rect.y && my <= s.rect.y + s.rect.h);
+    const inside = r => r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+    // stations first, front-most first; then doors; then the floor
+    const hits = ST.filter(s => s.room === G.room && inside(s.rect));
+    const door = room().doors.find(d => inside(d.rect));
     if (hits.length) target = hits.sort((a, b) => stationZ(b) - stationZ(a))[0].use;
+    else if (door) target = door.at;
     else {
       const tx = Math.floor((mx - ox) / ts), ty = Math.floor((my - oy) / (ts * K));
       if (walkable(tx, ty)) target = [tx, ty];
     }
     if (!target) return;
+    G.p.dest = null;
     const path = bfs([Math.floor(G.p.x), Math.floor(G.p.y)], target);
     if (path) G.p.path = path;
   });
