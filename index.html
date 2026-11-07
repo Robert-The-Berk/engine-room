@@ -185,6 +185,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       <li><b>Consoles</b> along the back wall set power for Shields, Weapons, Life support, Engines and Repair. On each console screen the bar is the power you set and the white mark is what the system needs right now.</li>
       <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan and get to the right console.</li>
       <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the console says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel.</li>
+      <li><b>Listen.</b> The reactor hum rises with load and spins down if it goes offline. A buzz means a breaker is about to trip. If the air vents go quiet, life support is short of power. A sonar ping is an unknown contact; a two-tone klaxon means the hull is below 40%. The jump drive whines louder as it nears full charge.</li>
       <li><b>Reactor.</b> Total allocation can't exceed reactor output. Low coolant cuts output; an empty fuel rod shuts it down.</li>
       <li><b>Refuelling.</b> When the rod is below 40%, eject it at the fuel port (left side of the reactor). Drop it in the disposal chute, take a fresh rod from the fuel rack and load it. Coolant works the same way on the right side. Ejecting cuts power until the new one is in, so pick a quiet moment.</li>
       <li><b>Repair</b> needs power whenever the hull is damaged. Powered repair slowly restores the hull.</li>
@@ -289,16 +290,92 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   }
 
   // ---------- sound ----------
-  let ac = null;
-  function tone(f, d, v, type = 'square', delay = 0) {
-    if (muted) return;
+  // all synthesized: one-shot tones and noise bursts, plus looping beds (reactor hum, vents, breaker buzz,
+  // welding, jump drive whine) whose levels follow the simulation every frame in audioUpdate()
+  let ac = null, master = null, noiseBuf = null, B = null;
+  function audioInit() {
+    if (ac) { if (ac.state === 'suspended' && !(paused && $('#startBox').hidden)) ac.resume().catch(() => {}); return; }
     try {
-      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ac.createDynamicsCompressor(); comp.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = muted ? 0 : 0.9; master.connect(comp);
+      noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      B = makeBeds();
+    } catch (e) { ac = null; /* audio unavailable */ }
+  }
+  function makeBeds() {
+    const out = n => { const g = ac.createGain(); g.gain.value = 0; n.connect(g).connect(master); return g; };
+    const filt = (type, f, q = 1) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+    const osc = (type, f, to) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.connect(to); o.start(); return o; };
+    const noise = to => { const n = ac.createBufferSource(); n.buffer = noiseBuf; n.loop = true; n.connect(to); n.start(); return n; };
+    // reactor hum: two detuned saws and a sub through a lowpass that opens with load; an LFO wobbles it, faster when hot
+    const humF = filt('lowpass', 200, 2), hum = out(humF);
+    const h1 = osc('sawtooth', 45, humF), h2 = osc('sawtooth', 45.5, humF), h3 = osc('sine', 22.5, humF);
+    const lfoG = ac.createGain(); lfoG.gain.value = 1; lfoG.connect(h1.frequency); lfoG.connect(h2.frequency);
+    const lfo = osc('sine', 0.25, lfoG);
+    // life support vents: soft band of noise
+    const ventF = filt('bandpass', 420, 0.6); noise(ventF); const vent = out(ventF);
+    // breaker overload buzz
+    const buzzF = filt('bandpass', 900, 3), bo = osc('square', 100, buzzF), buzz = out(buzzF);
+    // welding crackle in the repair bay
+    const weldF = filt('bandpass', 3200, 5); noise(weldF); const weld = out(weldF);
+    // jump drive spooling up
+    const jF = filt('lowpass', 4000), jo = osc('sine', 160, jF), jo2 = osc('triangle', 240, jF), whine = out(jF);
+    return { hum, humF, h1, h2, h3, lfo, lfoG, vent, buzz, bo, weld, whine, jo, jo2 };
+  }
+  function tone(f, d, v, type = 'square', delay = 0) {
+    if (!ac || muted) return;
+    try {
       const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
       o.type = type; o.frequency.setValueAtTime(f, t);
       g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.02);
+      o.connect(g).connect(master); o.start(t); o.stop(t + d + 0.02);
     } catch (e) { /* audio unavailable */ }
+  }
+  // burst of noise through a lowpass that sweeps from f0 to f1: footsteps, impacts, explosions
+  function noiseHit(d, v, f0, f1, delay = 0) {
+    if (!ac || muted) return;
+    try {
+      const t = ac.currentTime + delay, n = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = noiseBuf; n.loop = true; fl.type = 'lowpass';
+      fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + d);
+      g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      n.connect(fl).connect(g).connect(master); n.start(t, Math.random()); n.stop(t + d + 0.05);
+    } catch (e) { /* audio unavailable */ }
+  }
+  let alarmT = 0, stepT = 0;
+  function audioUpdate(dt) {
+    if (!B || !G || ac.state !== 'running') return;
+    const t = ac.currentTime, set = (p, v, tc = 0.25) => p.setTargetAtTime(v, t, tc);
+    const live = !G.over && !paused && $('#startBox').hidden, win = G.over === 'win';
+    const load = clamp((G.out || 0) / G.D.cap, 0, 1.2), on = capacity() > 0;
+    // hum: pitch and brightness follow the load; spins down when the reactor goes offline
+    const f = on ? 40 + 18 * load : 16, tc = on ? 0.4 : 1.4;
+    set(B.h1.frequency, f, tc); set(B.h2.frequency, f * 1.012, tc); set(B.h3.frequency, f / 2, tc);
+    set(B.humF.frequency, on ? 150 + 600 * load : 60, 0.4);
+    set(B.hum.gain, live && on ? 0.07 + 0.05 * load : 0, live && on ? 0.3 : 1.2);
+    const hot = !G.coolIn || G.cool < 25;
+    set(B.lfo.frequency, hot ? 7 : 0.25, 0.5); set(B.lfoG.gain, hot ? 3 : 1, 0.5);
+    // vents go quiet when life support is short of power
+    set(B.vent.gain, live && G.sys.life.delivered > 0.5 ? 0.05 * clamp(ratio('life'), 0, 1) : 0, 0.6);
+    // a breaker about to trip buzzes louder and higher
+    const ov = live ? Math.max(0, ...SYS.map(x => G.sys[x.id].tripped ? 0 : G.sys[x.id].overload / TRIP)) : 0;
+    set(B.buzz.gain, 0.06 * Math.pow(ov, 1.4), 0.05); set(B.bo.frequency, 100 + 60 * ov, 0.05);
+    // welding crackle while the bay works
+    const welding = live && G.bay.part && !G.bay.done && G.bayPow > 0;
+    B.weld.gain.setValueAtTime(welding && Math.random() < 0.35 ? rnd(0.02, 0.07) : 0, t);
+    // jump drive whine rises over the last 45 s, then sweeps up as the ship jumps
+    const k = win ? 1 : clamp(1 - G.jump / 45, 0, 1), wf = 160 + 1000 * k * k + (win ? 1800 * FX.warp : 0);
+    set(B.jo.frequency, wf, 0.2); set(B.jo2.frequency, wf * 1.5, 0.2);
+    set(B.whine.gain, live ? 0.025 * k : win ? 0.03 * (1 - FX.warp) : 0, 0.3);
+    if (!live) return;
+    // hull alarm below 40%, faster below 20%
+    if (G.hull < 40) { alarmT -= dt; if (alarmT <= 0) { alarmT = G.hull < 20 ? 1.1 : 1.8; tone(587, 0.32, 0.035, 'triangle'); tone(440, 0.4, 0.035, 'triangle', 0.36); } }
+    else alarmT = 0;
+    // footsteps
+    if (keys.size > 0 || (G.p.path && G.p.path.length)) { stepT -= dt; if (stepT <= 0) { stepT = 0.27; noiseHit(0.07, 0.07, 900, 150); } }
+    else stepT = 0.05;
   }
   const alarm = () => { tone(740, 0.18, 0.06); tone(520, 0.18, 0.06, 'square', 0.2); };
   const clunk = () => tone(90, 0.25, 0.2, 'sawtooth');
@@ -371,7 +448,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         if (st.grace > 0) st.grace -= dt;
         else if (st.alloc > limitOf(st.demand) && st.alloc > 0) {
           st.overload += dt;
-          if (st.overload >= TRIP) { st.tripped = true; st.overload = 0; G.trips++; clunk(); float(s.id, 'BREAKER TRIPPED'); }
+          if (st.overload >= TRIP) { st.tripped = true; st.overload = 0; G.trips++; clunk(); noiseHit(0.3, 0.12, 6000, 700); float(s.id, 'BREAKER TRIPPED'); }
         } else st.overload = Math.max(0, st.overload - dt * 2);
       }
       const deficit = Math.max(0, st.demand - st.delivered);
@@ -390,7 +467,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       G.prog[bay.part] = Math.min(1, G.prog[bay.part] + dt * (G.bayPow / BAYDRAW) / G.D.fix);
       if (G.prog[bay.part] >= 1) { bay.done = true; tone(990, 0.15, 0.06, 'sine'); tone(1320, 0.25, 0.06, 'sine', 0.15); say(`${PART[bay.part]} repaired. Take it to the cargo lift.`); }
     }
-    const out = Math.min(consoleCap, sum) + G.bayPow;
+    const out = Math.min(consoleCap, sum) + G.bayPow; G.out = out;
     if (G.fuelIn) G.fuel = Math.max(0, G.fuel - out * 0.0105 * dt);
     if (G.coolIn) G.cool = Math.max(0, G.cool - out * 0.0125 * dt);
 
@@ -408,9 +485,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     G.sys[id].damaged = true; G.lift.push(id);
     say(`Bridge: ${PART[id].toLowerCase()} damaged. Sending it down the cargo lift.`);
     tone(180, 0.35, 0.1, 'sawtooth'); tone(140, 0.45, 0.08, 'sawtooth', 0.2);
-    const g = geom(), p = partSpot(id, g); spark(p.x, p.y, COL.hazard, 26, 200); spark(p.x, p.y, '#ffffff', 6, 80); FX.bigHit = 0.4;
+    const g = geom(), p = partSpot(id, g); spark(p.x, p.y, COL.hazard, 26, 200); spark(p.x, p.y, '#ffffff', 6, 80); FX.bigHit = 0.4; noiseHit(0.6, 0.2, 2500, 90);
   }
-  function hit(n, label) { G.hull -= n; G.shake = 0.4; tone(55, 0.4, 0.2, 'sine'); float(null, label); FX.bigHit = 1; }
+  function hit(n, label) { G.hull -= n; G.shake = 0.4; tone(55, 0.4, 0.2, 'sine'); noiseHit(0.7, 0.3, 1800, 60); float(null, label); FX.bigHit = 1; }
   function float(sysId, text) {
     const s = sysId ? SYS.find(x => x.id === sysId) : null;
     G.floats.push({ x: s ? s.x + 0.5 : 7.5, y: s ? 1.2 : 7.5, text, t: 1.8 });
@@ -545,7 +622,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   function end(result) {
     G.over = result;
-    if (result === 'win') FX.warp = 0.001; else FX.boom = 0.001;
+    if (result === 'win') { FX.warp = 0.001; [523, 659, 784].forEach((f, i) => tone(f, 1.6, 0.04, 'sine', 0.9 + i * 0.12)); }
+    else { FX.boom = 0.001; noiseHit(2.8, 0.6, 2500, 40); tone(38, 2.2, 0.3, 'sine'); }
     setTimeout(() => showEnd(result), 1600);
   }
   function showEnd(result) {
@@ -1300,7 +1378,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   let last = performance.now(), hudT = 0;
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (G) { step(dt); if (!paused) fxStep(reduceMotion ? dt * 0.6 : dt); }
+    if (G) { step(dt); if (!paused) fxStep(reduceMotion ? dt * 0.6 : dt); audioUpdate(dt); }
     if (msgT > 0 && !paused) msgT -= dt;
     drawRoom(now); drawShip(now);
     hudT -= dt; if (hudT <= 0) { hud(); hudT = 0.08; }
@@ -1341,9 +1419,19 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!G || G.over || !$('#startBox').hidden) return;
     paused = !paused; $('#pause').textContent = paused ? 'Resume' : 'Pause';
     if (paused) { msg = 'Paused. Press P to resume.'; msgT = 1; } else msgT = 0;
+    if (ac) (paused ? ac.suspend() : ac.resume()).catch(() => {});
   }
   $('#pause').addEventListener('click', togglePause);
-  $('#mute').addEventListener('click', () => { muted = !muted; $('#mute').textContent = muted ? 'Sound off' : 'Sound on'; $('#mute').setAttribute('aria-pressed', String(muted)); });
+  function showMute() { $('#mute').textContent = muted ? 'Sound off' : 'Sound on'; $('#mute').setAttribute('aria-pressed', String(muted)); }
+  try { muted = localStorage.getItem('engineRoom.muted') === '1'; } catch (e) { /* storage unavailable */ }
+  showMute();
+  $('#mute').addEventListener('click', () => {
+    muted = !muted; showMute();
+    if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, ac.currentTime, 0.05);
+    try { localStorage.setItem('engineRoom.muted', muted ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+  });
+  // browsers only allow audio after a gesture; start it on the first one
+  ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, audioInit, true));
   document.querySelectorAll('#diff .btn').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('#diff .btn').forEach(x => x.setAttribute('aria-pressed', String(x === b))); diff = Number(b.dataset.v);
   }));
