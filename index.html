@@ -189,7 +189,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       <li><b>Refuelling.</b> When the rod is below 40%, eject it at the fuel port (left side of the reactor). Drop it in the disposal chute, take a fresh rod from the fuel rack and load it. Coolant works the same way on the right side. Ejecting cuts power until the new one is in, so pick a quiet moment.</li>
       <li><b>Repair</b> needs power whenever the hull is damaged. Powered repair slowly restores the hull.</li>
       <li><b>Damaged parts.</b> Alerts can knock out a shield emitter, the turret or a thruster, more likely if that system was short of power during the alert. Only 65% of a damaged system's power gets through, so it can't fully meet a big alert. The bridge sends the part down the <b>cargo lift</b> (right wall, top).</li>
-      <li><b>Repair bay</b> (right wall, below the lift). Put a damaged part in and it repairs using spare reactor power: up to 12 MW that the consoles aren't using. With no spare power it pauses. You can take a part out mid-repair and keep its progress. Carry the repaired part back to the cargo lift to install it.</li>
+      <li><b>Repair bay</b> (right wall, below the lift). Put a damaged part in and it takes a fixed 12 MW off the top of reactor output while it works; the consoles share what is left. If the consoles were already using that power, they all get cut back, so free up 12 MW first (the console card shows "Reactor free"). You can take a part out mid-repair and keep its progress. Carry the repaired part back to the cargo lift to install it.</li>
     </ul>
   </details>
 </div>
@@ -215,7 +215,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   ];
   const MAXALLOC = 40, TRIP = 3.5, SETTLE = 5;
   const PART = { shields: 'Shield emitter', weapons: 'Turret', engines: 'Thruster' };
-  const EFF = 0.65, BAYDRAW = 12; // damaged systems pass 65% of their power; the bay draws up to 12 MW of spare power
+  const EFF = 0.65, BAYDRAW = 12; // damaged systems pass 65% of their power; a working bay takes 12 MW before the consoles
   const EVENTS = [
     { type: 'fighters', name: 'Enemy fighters attacking', hint: 'Multiple fast signatures', dur: [16, 22], add: { shields: 22, weapons: 18 }, parts: ['shields', 'weapons'] },
     { type: 'asteroids', name: 'Asteroid field', hint: 'Large masses on our heading', dur: [14, 20], add: { engines: 14, shields: 12 }, parts: ['shields', 'engines'] },
@@ -314,6 +314,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     return c;
   }
   const allocSum = () => SYS.reduce((a, s) => a + G.sys[s.id].alloc, 0);
+  const bayLoad = () => G.bay.part && !G.bay.done ? BAYDRAW : 0;
   const limitOf = d => Math.max(d * 1.25, d + 4);
   const ratio = id => { const st = G.sys[id]; return st.demand > 0.5 ? clamp(st.delivered / st.demand, 0, 1.5) : 1; };
 
@@ -356,8 +357,12 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       if (st.demand < prev - 1.5 && st.alloc > limitOf(st.demand)) st.grace = Math.max(st.grace, SETTLE);
     });
 
-    const cap = capacity(), sum = allocSum();
-    const scale = sum > 0 ? Math.min(1, cap / sum) : 1;
+    // a working repair bay takes its fixed draw first; the consoles share what is left
+    const cap = capacity(), sum = allocSum(), bay = G.bay;
+    G.bayPow = Math.min(bayLoad(), cap);
+    const consoleCap = cap - G.bayPow;
+    const scale = sum > 0 ? Math.min(1, consoleCap / sum) : 1;
+    G.squeeze = G.bayPow > 0 && sum > consoleCap + 0.5;
     let dmg = 0;
     SYS.forEach(s => {
       const st = G.sys[s.id];
@@ -381,15 +386,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (G.hull < 100 && rep > 0) G.hull = Math.min(100, G.hull + rep * 0.07 * dt);
     if (G.hull <= 0) { G.hull = 0; return end('lose'); }
 
-    // repair bay runs on whatever the consoles leave spare
-    const used = Math.min(cap, sum), bay = G.bay;
-    G.bayPow = 0;
     if (bay.part && !bay.done) {
-      G.bayPow = Math.min(BAYDRAW, Math.max(0, cap - used));
       G.prog[bay.part] = Math.min(1, G.prog[bay.part] + dt * (G.bayPow / BAYDRAW) / G.D.fix);
       if (G.prog[bay.part] >= 1) { bay.done = true; tone(990, 0.15, 0.06, 'sine'); tone(1320, 0.25, 0.06, 'sine', 0.15); say(`${PART[bay.part]} repaired. Take it to the cargo lift.`); }
     }
-    const out = used + G.bayPow;
+    const out = Math.min(consoleCap, sum) + G.bayPow;
     if (G.fuelIn) G.fuel = Math.max(0, G.fuel - out * 0.0105 * dt);
     if (G.coolIn) G.cool = Math.max(0, G.cool - out * 0.0125 * dt);
 
@@ -456,9 +457,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!G || G.over || paused) return;
     const s = nearStation(); if (!s || s.type !== 'console') return;
     const st = G.sys[s.sys];
-    const room = capacity() - (allocSum() - st.alloc);
+    const room = capacity() - bayLoad() - (allocSum() - st.alloc);
     let v = clamp(st.alloc + delta, 0, MAXALLOC);
-    if (delta > 0 && v > room) { v = Math.max(st.alloc, Math.floor(room)); if (v === st.alloc) say('Reactor at full allocation. Take power from another system.'); }
+    if (delta > 0 && v > room) { v = Math.max(st.alloc, Math.floor(room)); if (v === st.alloc) say(bayLoad() ? 'Reactor at full allocation (the repair bay is taking 12 MW). Take power from another system.' : 'Reactor at full allocation. Take power from another system.'); }
     st.alloc = v; click();
   }
   function matchLoad() {
@@ -515,7 +516,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         if (p.hold && p.hold.startsWith('broken_')) {
           if (b.part) { say('The bay is occupied.'); return; }
           b.part = p.hold.slice(7); b.done = G.prog[b.part] >= 1; p.hold = null; clunk();
-          say(`${PART[b.part]} in the bay. It repairs on spare reactor power.`); return;
+          if (b.done) { say(`${PART[b.part]} is already repaired.`); return; }
+          const short = Math.ceil(allocSum() + BAYDRAW - capacity());
+          say(short > 0 ? `${PART[b.part]} in the bay, drawing 12 MW. Consoles are ${short} MW short: turn something down.` : `${PART[b.part]} in the bay, drawing 12 MW from the reactor.`); return;
         }
         if (p.hold) { say(p.hold.startsWith('fixed_') ? 'That part is fixed. Take it to the cargo lift.' : 'Only damaged ship parts go in the repair bay.'); return; }
         if (!b.part) { say(G.lift.length ? 'Bay empty. Fetch the damaged part from the cargo lift.' : 'Bay empty. No damaged parts right now.'); return; }
@@ -1211,8 +1214,8 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!b.part) return G.lift.length ? 'Empty. A damaged part is waiting at the cargo lift.' : 'Empty. No damaged parts right now.';
     if (b.done) return `${PART[b.part]} repaired. Take it to the cargo lift to install it.`;
     const left = (1 - G.prog[b.part]) * G.D.fix;
-    if (G.bayPow <= 0) return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}%. Paused: no spare reactor power. Free some up at the consoles.`;
-    return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}% · using ${Math.round(G.bayPow)} of ${BAYDRAW} MW spare power · about ${Math.ceil(left * BAYDRAW / G.bayPow)}s left`;
+    if (G.bayPow <= 0) return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}%. Paused: the reactor is offline.`;
+    return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}% · drawing ${Math.round(G.bayPow)} MW · about ${Math.ceil(left * BAYDRAW / G.bayPow)}s left. Take the part out to give the power back.`;
   }
   let lastStation;
   function hud() {
@@ -1230,7 +1233,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     });
     const cap = capacity();
     $('#r-cap').textContent = Math.round(cap) + ' MW';
-    $('#r-alloc').textContent = Math.round(allocSum()) + ' MW';
+    $('#r-alloc').textContent = Math.round(allocSum() + bayLoad()) + ' MW';
     $('#r-fuel').textContent = G.fuelIn ? Math.round(G.fuel) + '%' : 'EMPTY';
     $('#r-cool').textContent = G.coolIn ? Math.round(G.cool) + '%' : 'NONE';
     $('#r-fuelBar').style.width = (G.fuelIn ? G.fuel : 0) + '%';
@@ -1244,7 +1247,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (sig && s.type === 'console') {
       const st = G.sys[s.sys], card = $('#stationCard');
       card.querySelector('.readout').innerHTML = `${st.alloc}<small>needs ${Math.round(st.demand)} · max safe ${Math.floor(limitOf(st.demand))}${st.damaged ? ' · part damaged, 65% gets through' : ''}</small>`;
-      card.querySelector('.state').innerHTML = chipFor(st) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum()))} MW</span>`;
+      card.querySelector('.state').innerHTML = chipFor(st) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum() - bayLoad()))} MW</span>`;
     } else if (sig === 'bay') $('#stationCard .state').textContent = bayStatus();
     else if (sig === 'lift') {
       const h = G.p.hold;
@@ -1259,6 +1262,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       else if (G.fuel < 25) pr = 'Fuel rod low. Swap it at the fuel port.';
       else if (G.coolIn && G.cool < 25) pr = 'Coolant low. Reactor output is dropping.';
       else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel.';
+      else if (G.squeeze) pr = 'Repair bay is taking 12 MW. Consoles are getting less than you set.';
       else if (G.p.hold && G.p.hold.startsWith('broken_')) pr = `Carrying a damaged ${PART[G.p.hold.slice(7)].toLowerCase()}. Put it in the repair bay.`;
       else if (G.p.hold && G.p.hold.startsWith('fixed_')) pr = `Take the repaired ${PART[G.p.hold.slice(6)].toLowerCase()} to the cargo lift to install it.`;
       else if (G.bay.done) pr = 'Repair complete. Collect the part from the repair bay.';
