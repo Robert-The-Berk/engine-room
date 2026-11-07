@@ -76,6 +76,9 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .alerts li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 5px; background: color-mix(in srgb, var(--bad) 14%, transparent); border-left: 3px solid var(--bad); font-weight: 600; }
 .alerts li span { font-family: var(--f-mono); font-weight: 400; color: var(--muted); white-space: nowrap; }
 .alerts .soon { background: color-mix(in srgb, var(--hazard) 14%, transparent); border-left-color: var(--hazard); }
+.alerts .scan { background: color-mix(in srgb, var(--muted) 12%, transparent); border-left-color: var(--muted); }
+.alerts li small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.alerts .part { background: color-mix(in srgb, var(--c-repair) 10%, transparent); border-left-color: var(--c-repair); font-weight: 500; }
 .alerts .none { background: transparent; border-left-color: var(--line); color: var(--muted); font-weight: 400; }
 
 .systems { display: flex; flex-direction: column; gap: 8px; }
@@ -91,6 +94,7 @@ button:focus-visible { outline: 2px solid var(--hazard); outline-offset: 2px; }
 .chip.warn { color: var(--hazard); }
 .chip.trip { color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, transparent); }
 .chip.low { color: var(--bad); }
+.chip.dmg { color: var(--c-repair); }
 
 .station { border-color: var(--hazard); }
 .station.idle { border-color: var(--line); }
@@ -137,6 +141,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
           <li>Too much power for a few seconds trips its breaker. Reset it at the breaker panel.</li>
           <li>Too little power and the ship takes damage. Watch the ship to see it happen.</li>
           <li>Swap spent fuel rods and coolant before they run dry.</li>
+          <li>Damaged ship parts come down the cargo lift. Fix them in the repair bay while the reactor has power to spare.</li>
         </ul>
         <div class="seg" id="diff">
           <button class="btn" data-v="0" aria-pressed="false">Cadet</button>
@@ -168,6 +173,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
         <span class="lbl">Allocated</span><span></span><span class="val" id="r-alloc"></span>
         <span class="lbl">Fuel rod</span><div class="bar"><i id="r-fuelBar"></i></div><span class="val" id="r-fuel"></span>
         <span class="lbl">Coolant</span><div class="bar"><i id="r-coolBar"></i></div><span class="val" id="r-cool"></span>
+        <span class="lbl">Repair bay</span><span></span><span class="val" id="r-bay"></span>
         <span class="lbl">Spares</span><span></span><span class="val" id="r-spares"></span>
       </div>
     </div>
@@ -177,12 +183,13 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     <summary>Engineer's manual</summary>
     <ul>
       <li><b>Consoles</b> along the back wall set power for Shields, Weapons, Life support, Engines and Repair. On each console screen the bar is the power you set and the white mark is what the system needs right now.</li>
-      <li><b>Bridge alerts</b> arrive a few seconds before the power need hits ("in 5s"). Use that time to get to the right console.</li>
-      <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 2.5 seconds. When an alert ends and a system needs less, turn it down or it will trip. A tripped system gets no power until you reset it at the breaker panel.</li>
+      <li><b>Bridge alerts.</b> Long-range sensors pick up an unknown contact first, with a hint of what it might be. Once it is identified you get a countdown ("in 8s") before the power need hits. Use that time to plan and get to the right console.</li>
+      <li><b>Breakers.</b> A system can take up to 25% more than it needs (at least 4 MW extra). Above that, its breaker warns, then trips after about 3.5 seconds. When an alert ends you get 5 seconds' grace to turn the power back down (the console says TURN DOWN). A tripped system gets no power until you reset it at the breaker panel.</li>
       <li><b>Reactor.</b> Total allocation can't exceed reactor output. Low coolant cuts output; an empty fuel rod shuts it down.</li>
       <li><b>Refuelling.</b> When the rod is below 40%, eject it at the fuel port (left side of the reactor). Drop it in the disposal chute, take a fresh rod from the fuel rack and load it. Coolant works the same way on the right side. Ejecting cuts power until the new one is in, so pick a quiet moment.</li>
       <li><b>Repair</b> needs power whenever the hull is damaged. Powered repair slowly restores the hull.</li>
-      <li><b>Repair bay</b> (right wall) is offline for now. In a future update, broken ship parts can be brought here and repaired at the cost of power and time.</li>
+      <li><b>Damaged parts.</b> Alerts can knock out a shield emitter, the turret or a thruster, more likely if that system was short of power during the alert. Only 65% of a damaged system's power gets through, so it can't fully meet a big alert. The bridge sends the part down the <b>cargo lift</b> (right wall, top).</li>
+      <li><b>Repair bay</b> (right wall, below the lift). Put a damaged part in and it repairs using spare reactor power: up to 12 MW that the consoles aren't using. With no spare power it pauses. You can take a part out mid-repair and keep its progress. Carry the repaired part back to the cargo lift to install it.</li>
     </ul>
   </details>
 </div>
@@ -206,21 +213,24 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     { id: 'engines', name: 'Engines', base: 14, w: 0.035, x: 10 },
     { id: 'repair', name: 'Repair', base: 0, w: 0, x: 13 }
   ];
-  const MAXALLOC = 40;
+  const MAXALLOC = 40, TRIP = 3.5, SETTLE = 5;
+  const PART = { shields: 'Shield emitter', weapons: 'Turret', engines: 'Thruster' };
+  const EFF = 0.65, BAYDRAW = 12; // damaged systems pass 65% of their power; the bay draws up to 12 MW of spare power
   const EVENTS = [
-    { type: 'fighters', name: 'Enemy fighters attacking', dur: [14, 20], add: { shields: 22, weapons: 18 } },
-    { type: 'asteroids', name: 'Asteroid field', dur: [12, 18], add: { engines: 14, shields: 12 } },
-    { type: 'breach', name: 'Hull breach on deck 3', dur: [12, 16], add: { life: 10 }, hit: 6 },
-    { type: 'evasive', name: 'Evasive maneuvers', dur: [8, 12], add: { engines: 16 } },
-    { type: 'torpedo', name: 'Torpedo lock: point defense', dur: [8, 12], add: { weapons: 20 } },
-    { type: 'flare', name: 'Solar flare', dur: [10, 15], add: { shields: 18, life: 4 } },
-    { type: 'drones', name: 'Boarding drones on the hull', dur: [10, 14], add: { weapons: 12, life: 6 } },
-    { type: 'gravity', name: 'Gravity well: full burn', dur: [10, 14], add: { engines: 20 } }
+    { type: 'fighters', name: 'Enemy fighters attacking', hint: 'Multiple fast signatures', dur: [16, 22], add: { shields: 22, weapons: 18 }, parts: ['shields', 'weapons'] },
+    { type: 'asteroids', name: 'Asteroid field', hint: 'Large masses on our heading', dur: [14, 20], add: { engines: 14, shields: 12 }, parts: ['shields', 'engines'] },
+    { type: 'breach', name: 'Hull breach on deck 3', hint: 'Structural stress, lower decks', dur: [12, 16], add: { life: 10 }, hit: 6, parts: [] },
+    { type: 'evasive', name: 'Evasive maneuvers', hint: 'Bridge plotting a course change', dur: [10, 14], add: { engines: 16 }, parts: ['engines'] },
+    { type: 'torpedo', name: 'Torpedo lock: point defense', hint: 'Targeting radar on us', dur: [10, 14], add: { weapons: 20 }, parts: ['weapons'] },
+    { type: 'flare', name: 'Solar flare', hint: 'Stellar activity rising', dur: [12, 16], add: { shields: 18, life: 4 }, parts: ['shields'] },
+    { type: 'drones', name: 'Boarding drones on the hull', hint: 'Small objects pacing us', dur: [12, 16], add: { weapons: 12, life: 6 }, parts: ['weapons'] },
+    { type: 'gravity', name: 'Gravity well: full burn', hint: 'Gravitational anomaly ahead', dur: [12, 16], add: { engines: 20 }, parts: ['engines'] }
   ];
+  // scan: seconds as an unknown contact; warn: countdown once identified; brk: base chance a part breaks; fix: seconds to repair at full bay power
   const DIFF = [
-    { cap: 100, gap: [11, 17], dmg: 0.5, maxEv: 2, time: 240, warn: 6 },
-    { cap: 90, gap: [8, 14], dmg: 0.75, maxEv: 2, time: 240, warn: 5 },
-    { cap: 80, gap: [5, 10], dmg: 1, maxEv: 3, time: 270, warn: 3.5 }
+    { cap: 100, gap: [30, 40], dmg: 0.5, maxEv: 1, time: 270, scan: 9, warn: 10, brk: 0.3, fix: 16 },
+    { cap: 90, gap: [24, 32], dmg: 0.75, maxEv: 2, time: 300, scan: 8, warn: 8, brk: 0.4, fix: 20 },
+    { cap: 80, gap: [18, 26], dmg: 1, maxEv: 2, time: 330, scan: 6, warn: 6, brk: 0.5, fix: 24 }
   ];
 
   // ---------- map ----------
@@ -236,8 +246,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   ST.push({ type: 'fuelrack', label: 'Fuel rack', tile: [10, 9], use: [10, 8] });
   ST.push({ type: 'coolrack', label: 'Coolant', tile: [12, 9], use: [12, 8] });
   ST.push({ type: 'bay', label: 'Repair bay', tile: [14, 5], use: [13, 5] });
+  ST.push({ type: 'lift', label: 'Cargo lift', tile: [14, 2], use: [13, 2] });
   ST.forEach(s => { if (s.type !== 'fuelport' && s.type !== 'coolport') obstacle.add(key(s.tile[0], s.tile[1])); });
-  obstacle.add(key(0, 6)); obstacle.add(key(14, 4));
+  obstacle.add(key(0, 6)); obstacle.add(key(14, 4)); obstacle.add(key(14, 1));
   const walkable = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !obstacle.has(key(x, y));
 
   function bfs(from, to) {
@@ -267,9 +278,10 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     G = {
       D, t: 0, jump: D.time, hull: 100, over: null, dmgRate: 0,
       p: { x: 7.5, y: 8.5, path: null, hold: null, face: 1, walk: 0 },
-      sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, delivered: 0, tripped: false, overload: 0, grace: 0, drift: 0 }])),
+      sys: Object.fromEntries(SYS.map(s => [s.id, { alloc: s.id === 'repair' ? 0 : s.base + 2, demand: s.base, delivered: 0, tripped: false, overload: 0, grace: 0, drift: 0, damaged: false }])),
       fuel: 100, fuelIn: true, cool: 100, coolIn: true, spareFuel: 3, spareCool: 3,
-      events: [], nextEvent: 5, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
+      lift: [], bay: { part: null, done: false }, prog: { shields: 0, weapons: 0, engines: 0 }, bayPow: 0, fixed: 0,
+      events: [], nextEvent: 10, trips: 0, under: 0, floats: [], shake: 0, lastHit: 0
     };
     resetFX();
     $('#startBox').hidden = true; $('#endBox').hidden = true;
@@ -291,6 +303,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
   const alarm = () => { tone(740, 0.18, 0.06); tone(520, 0.18, 0.06, 'square', 0.2); };
   const clunk = () => tone(90, 0.25, 0.2, 'sawtooth');
   const click = () => tone(1200, 0.05, 0.04, 'triangle');
+  const ping = () => { tone(660, 0.6, 0.03, 'sine'); tone(660, 0.4, 0.012, 'sine', 0.35); };
 
   // ---------- simulation ----------
   function capacity() {
@@ -313,24 +326,34 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (G.nextEvent <= 0 && G.events.length < G.D.maxEv) {
       const pool = EVENTS.filter(e => !G.events.some(a => a.name === e.name));
       const e = pool[Math.floor(Math.random() * pool.length)];
-      G.events.push({ type: e.type, name: e.name, add: e.add, left: rnd(...e.dur), eta: G.D.warn, hit: e.hit });
-      alarm();
-      G.nextEvent = rnd(...G.D.gap) * Math.max(0.55, 1 - G.t / 400);
-    } else if (G.nextEvent <= 0) G.nextEvent = 2;
+      G.events.push({ type: e.type, name: e.name, hint: e.hint, add: e.add, parts: e.parts, left: rnd(...e.dur), scan: G.D.scan, eta: G.D.warn, warn0: G.D.warn, hit: e.hit, act: 0, short: 0, ping: 2.5 });
+      ping();
+      G.nextEvent = rnd(...G.D.gap) * Math.max(0.7, 1 - G.t / 500);
+    } else if (G.nextEvent <= 0) G.nextEvent = rnd(8, 14); // board is full: leave a quiet spell after the current alerts
     G.events.forEach(e => {
-      if (e.eta > 0) { e.eta -= dt; if (e.eta <= 0 && e.hit) hit(e.hit * G.D.dmg, 'BREACH!'); }
-      else e.left -= dt;
+      if (e.scan > 0) {
+        e.scan -= dt; e.ping -= dt;
+        if (e.scan <= 0) alarm(); else if (e.ping <= 0) { e.ping = 2.5; ping(); }
+      } else if (e.eta > 0) { e.eta -= dt; if (e.eta <= 0 && e.hit) hit(e.hit * G.D.dmg, 'BREACH!'); }
+      else {
+        e.left -= dt; e.act += dt;
+        if (e.parts.some(id => G.sys[id].demand - G.sys[id].delivered > 0.5)) e.short += dt;
+      }
     });
+    G.events.filter(e => e.left <= 0).forEach(maybeBreak);
     G.events = G.events.filter(e => e.left > 0);
 
     SYS.forEach(s => {
       const st = G.sys[s.id];
       st.drift -= dt;
-      if (st.drift <= 0) { st.driftVal = s.id === 'engines' || s.id === 'life' ? Math.round(rnd(-2, 2)) : 0; st.drift = rnd(5, 9); }
+      if (st.drift <= 0) { st.driftVal = s.id === 'engines' || s.id === 'life' ? Math.round(rnd(-2, 2)) : 0; st.drift = rnd(12, 20); }
       let d = s.base + (st.driftVal || 0);
       G.events.forEach(e => { if (e.eta <= 0) d += e.add[s.id] || 0; });
       if (s.id === 'repair') d = G.hull < 100 ? 6 + Math.round((100 - G.hull) / 12) : 0;
+      const prev = st.demand;
       st.demand = Math.max(0, d);
+      // demand just fell (an alert ended): give the breaker time to let you turn it down
+      if (st.demand < prev - 1.5 && st.alloc > limitOf(st.demand)) st.grace = Math.max(st.grace, SETTLE);
     });
 
     const cap = capacity(), sum = allocSum();
@@ -338,12 +361,12 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     let dmg = 0;
     SYS.forEach(s => {
       const st = G.sys[s.id];
-      st.delivered = st.tripped ? 0 : st.alloc * scale;
+      st.delivered = st.tripped ? 0 : st.alloc * scale * (st.damaged ? EFF : 1);
       if (!st.tripped) {
         if (st.grace > 0) st.grace -= dt;
         else if (st.alloc > limitOf(st.demand) && st.alloc > 0) {
           st.overload += dt;
-          if (st.overload >= 2.5) { st.tripped = true; st.overload = 0; G.trips++; clunk(); float(s.id, 'BREAKER TRIPPED'); }
+          if (st.overload >= TRIP) { st.tripped = true; st.overload = 0; G.trips++; clunk(); float(s.id, 'BREAKER TRIPPED'); }
         } else st.overload = Math.max(0, st.overload - dt * 2);
       }
       const deficit = Math.max(0, st.demand - st.delivered);
@@ -358,7 +381,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (G.hull < 100 && rep > 0) G.hull = Math.min(100, G.hull + rep * 0.07 * dt);
     if (G.hull <= 0) { G.hull = 0; return end('lose'); }
 
-    const out = Math.min(cap, sum);
+    // repair bay runs on whatever the consoles leave spare
+    const used = Math.min(cap, sum), bay = G.bay;
+    G.bayPow = 0;
+    if (bay.part && !bay.done) {
+      G.bayPow = Math.min(BAYDRAW, Math.max(0, cap - used));
+      G.prog[bay.part] = Math.min(1, G.prog[bay.part] + dt * (G.bayPow / BAYDRAW) / G.D.fix);
+      if (G.prog[bay.part] >= 1) { bay.done = true; tone(990, 0.15, 0.06, 'sine'); tone(1320, 0.25, 0.06, 'sine', 0.15); say(`${PART[bay.part]} repaired. Take it to the cargo lift.`); }
+    }
+    const out = used + G.bayPow;
     if (G.fuelIn) G.fuel = Math.max(0, G.fuel - out * 0.0105 * dt);
     if (G.coolIn) G.cool = Math.max(0, G.cool - out * 0.0125 * dt);
 
@@ -367,6 +398,17 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     G.shake = Math.max(0, G.shake - dt);
   }
 
+  function maybeBreak(e) {
+    const cand = e.parts.filter(id => !G.sys[id].damaged);
+    if (!cand.length) return;
+    const chance = G.D.brk + 0.5 * (e.act > 0 ? e.short / e.act : 0);
+    if (Math.random() >= chance) return;
+    const id = cand[Math.floor(Math.random() * cand.length)];
+    G.sys[id].damaged = true; G.lift.push(id);
+    say(`Bridge: ${PART[id].toLowerCase()} damaged. Sending it down the cargo lift.`);
+    tone(180, 0.35, 0.1, 'sawtooth'); tone(140, 0.45, 0.08, 'sawtooth', 0.2);
+    const g = geom(), p = partSpot(id, g); spark(p.x, p.y, COL.hazard, 26, 200); spark(p.x, p.y, '#ffffff', 6, 80); FX.bigHit = 0.4;
+  }
   function hit(n, label) { G.hull -= n; G.shake = 0.4; tone(55, 0.4, 0.2, 'sine'); float(null, label); FX.bigHit = 1; }
   function float(sysId, text) {
     const s = sysId ? SYS.find(x => x.id === sysId) : null;
@@ -423,7 +465,9 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (!G || G.over || paused) return;
     const s = nearStation(); if (!s || s.type !== 'console') return;
     const st = G.sys[s.sys];
-    adjust(Math.ceil(st.demand) + (st.demand > 0 ? 1 : 0) - st.alloc);
+    let target = 0;
+    if (st.demand > 0) target = Math.min(Math.ceil(st.demand / (st.damaged ? EFF : 1)) + 1, Math.floor(limitOf(st.demand)));
+    adjust(target - st.alloc);
   }
   function use() {
     if (!G || G.over || paused) return;
@@ -456,17 +500,41 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       case 'fuelrack':
         if (!p.hold) { if (G.spareFuel > 0) { G.spareFuel--; p.hold = 'freshFuel'; say('Picked up a fresh fuel rod.'); click(); } else say('No spare rods left.'); return; }
         if (p.hold === 'freshFuel') { G.spareFuel++; p.hold = null; say('Rod returned to the rack.'); return; }
-        say('Spent items go in the disposal chute.'); return;
+        say(p.hold.startsWith('spent') ? 'Spent items go in the disposal chute.' : 'Your hands are full.'); return;
       case 'coolrack':
         if (!p.hold) { if (G.spareCool > 0) { G.spareCool--; p.hold = 'freshCool'; say('Picked up a fresh coolant canister.'); click(); } else say('No spare coolant left.'); return; }
         if (p.hold === 'freshCool') { G.spareCool++; p.hold = null; say('Canister returned.'); return; }
-        say('Spent items go in the disposal chute.'); return;
+        say(p.hold.startsWith('spent') ? 'Spent items go in the disposal chute.' : 'Your hands are full.'); return;
       case 'chute':
         if (p.hold === 'spentFuel' || p.hold === 'spentCool') { say(p.hold === 'spentFuel' ? 'Spent rod disposed.' : 'Spent coolant disposed.'); p.hold = null; tone(200, 0.3, 0.08, 'triangle'); }
+        else if (p.hold) say('Ship parts can be repaired. Take them to the repair bay.');
         else say('Nothing to dispose of.');
         return;
-      case 'bay':
-        say('Repair bay offline. Coming in a future update: repair broken ship parts here.'); return;
+      case 'bay': {
+        const b = G.bay;
+        if (p.hold && p.hold.startsWith('broken_')) {
+          if (b.part) { say('The bay is occupied.'); return; }
+          b.part = p.hold.slice(7); b.done = G.prog[b.part] >= 1; p.hold = null; clunk();
+          say(`${PART[b.part]} in the bay. It repairs on spare reactor power.`); return;
+        }
+        if (p.hold) { say(p.hold.startsWith('fixed_') ? 'That part is fixed. Take it to the cargo lift.' : 'Only damaged ship parts go in the repair bay.'); return; }
+        if (!b.part) { say(G.lift.length ? 'Bay empty. Fetch the damaged part from the cargo lift.' : 'Bay empty. No damaged parts right now.'); return; }
+        p.hold = (b.done ? 'fixed_' : 'broken_') + b.part; click();
+        say(b.done ? `Collected the repaired ${PART[b.part].toLowerCase()}. Install it at the cargo lift.` : `Took the ${PART[b.part].toLowerCase()} out at ${Math.floor(G.prog[b.part] * 100)}%. Progress is kept.`);
+        b.part = null; b.done = false; return;
+      }
+      case 'lift': {
+        if (p.hold && p.hold.startsWith('fixed_')) {
+          const id = p.hold.slice(6); G.sys[id].damaged = false; G.prog[id] = 0; p.hold = null; G.fixed++;
+          tone(520, 0.12, 0.06, 'triangle'); tone(780, 0.2, 0.06, 'triangle', 0.12);
+          say(`${PART[id]} sent up and installed. ${SYS.find(x => x.id === id).name} back to full strength.`); return;
+        }
+        if (p.hold && p.hold.startsWith('broken_')) { G.lift.push(p.hold.slice(7)); p.hold = null; say('Part put back on the lift.'); return; }
+        if (p.hold) { say('Your hands are full.'); return; }
+        if (!G.lift.length) { say('Nothing on the lift.'); return; }
+        const id = G.lift.shift(); p.hold = 'broken_' + id; click();
+        say(`Picked up the damaged ${PART[id].toLowerCase()}. Take it to the repair bay.`); return;
+      }
       case 'console':
         matchLoad(); return;
     }
@@ -486,7 +554,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       ? `The jump drive fired with the hull at ${Math.round(G.hull)}%. The bridge sends its thanks to engineering.`
       : `The hull gave out with ${fmtT(G.jump)} left on the jump drive.`;
     const s = document.createElement('div'); s.className = 'stats';
-    s.textContent = `Shift ${fmtT(G.t)} · Breakers tripped ${G.trips} · Systems short of power ${Math.round(G.under)} s`;
+    s.textContent = `Shift ${fmtT(G.t)} · Breakers tripped ${G.trips} · Parts repaired ${G.fixed} · Systems short of power ${Math.round(G.under)} s`;
     const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'New shift'; b.addEventListener('click', newGame);
     const c = document.createElement('button'); c.className = 'btn'; c.textContent = 'Change difficulty'; c.addEventListener('click', () => { $('#endBox').hidden = true; $('#startBox').hidden = false; });
     const row = document.createElement('div'); row.className = 'seg'; row.append(b, c);
@@ -606,10 +674,12 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       c.fillStyle = COL.fg; c.fillRect(b.x + pad + 2 + v(st.demand) - 1, sy + sh * 0.45, 2, sh * 0.5);
       c.fillStyle = st.tripped ? COL.bad : col; c.font = `600 ${Math.max(8, ts * 0.2)}px 'Share Tech Mono', monospace`;
       c.fillText(st.tripped ? 'TRIP' : `${st.alloc}/${Math.round(st.demand)}`, b.x + b.w / 2, sy + sh * 0.28);
+      if (st.damaged) { c.fillStyle = COL['c-repair']; c.font = `700 ${Math.max(7, ts * 0.16)}px 'Share Tech Mono', monospace`; c.fillText('PART DMG', b.x + b.w / 2, b.faceY + b.faceH * 0.88); }
       // status light
       const deficit = st.demand - st.delivered > 0.5;
-      const lc = st.tripped ? COL.bad : st.overload > 0 ? COL.hazard : deficit ? COL.bad : COL.good;
-      const blink = (st.tripped || st.overload > 0 || deficit) ? (Math.sin(now / 120) > 0 ? 1 : 0.3) : 1;
+      const settle = st.grace > 0 && st.alloc > limitOf(st.demand);
+      const lc = st.tripped ? COL.bad : st.overload > 0 || settle ? COL.hazard : deficit ? COL.bad : COL.good;
+      const blink = (st.tripped || st.overload > 0 || settle || deficit) ? (Math.sin(now / 120) > 0 ? 1 : 0.3) : 1;
       c.fillStyle = rgba(lc, blink); c.beginPath(); c.arc(b.x + b.w / 2, b.faceY + b.faceH * 0.72, ts * 0.08, 0, Math.PI * 2); c.fill();
       // label on the wall above
       c.fillStyle = col; c.font = `700 ${Math.max(9, ts * 0.24)}px Oxanium, sans-serif`;
@@ -633,12 +703,44 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (s.type === 'bay') {
       const b = box(c, 14.1, 4.1, 0.85, 1.8, 1.35, '#2b333b', '#222930', ol);
       s.rect = { x: b.x - ts * 0.2, y: b.y, w: b.w + ts * 0.2, h: b.bottom - b.y };
-      c.fillStyle = '#0a0e12'; c.fillRect(b.x + b.w * 0.12, b.faceY + b.faceH * 0.15, b.w * 0.76, b.faceH * 0.45);
-      c.strokeStyle = 'rgba(255,255,255,.12)'; c.strokeRect(b.x + b.w * 0.12, b.faceY + b.faceH * 0.15, b.w * 0.76, b.faceH * 0.45);
-      c.fillStyle = COL.muted; c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`;
-      c.fillText('OFFLINE', b.x + b.w / 2, b.faceY + b.faceH * 0.38);
-      c.textAlign = 'right'; c.font = `600 ${Math.max(9, ts * 0.22)}px Barlow, sans-serif`;
+      const bay = G.bay, pw = G.bayPow / BAYDRAW, working = bay.part && !bay.done && pw > 0;
+      const wx = b.x + b.w * 0.12, wy = b.faceY + b.faceH * 0.12, ww = b.w * 0.76, wh = b.faceH * 0.5;
+      c.fillStyle = '#0a0e12'; c.fillRect(wx, wy, ww, wh);
+      if (working) { c.fillStyle = rgba(COL['c-repair'], (0.1 + 0.08 * Math.sin(now / 180)) * pw); c.fillRect(wx, wy, ww, wh); }
+      if (bay.part) drawItem(c, wx + ww / 2, wy + wh * 0.94, (bay.done ? 'fixed_' : 'broken_') + bay.part, ts * 0.62);
+      if (working && !reduceMotion) for (let i = 0; i < 3; i++) if (Math.random() < 0.6) {
+        c.fillStyle = Math.random() < 0.5 ? '#ffffff' : COL['c-repair'];
+        c.fillRect(wx + ww / 2 + rnd(-ww * 0.22, ww * 0.22), wy + wh * rnd(0.3, 0.85), 2, 2);
+      }
+      c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 1; c.strokeRect(wx, wy, ww, wh);
+      const py = wy + wh + b.faceH * 0.07, ph = Math.max(3, b.faceH * 0.07);
+      c.fillStyle = '#081016'; c.fillRect(wx, py, ww, ph);
+      if (bay.part) { c.fillStyle = bay.done ? COL.good : COL['c-repair']; c.fillRect(wx, py, ww * G.prog[bay.part], ph); }
+      const txt = !bay.part ? 'EMPTY' : bay.done ? 'READY' : pw <= 0 ? 'NO PWR' : Math.floor(G.prog[bay.part] * 100) + '%';
+      c.fillStyle = !bay.part ? COL.muted : bay.done ? COL.good : pw <= 0 ? COL.bad : COL['c-repair'];
+      c.font = `600 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`;
+      c.fillText(txt, b.x + b.w / 2, py + ph + b.faceH * 0.12);
+      c.fillStyle = COL.muted; c.textAlign = 'right'; c.font = `600 ${Math.max(9, ts * 0.22)}px Barlow, sans-serif`;
       c.fillText('REPAIR BAY', b.x - 4, b.y + ts * 0.1);
+      return;
+    }
+    if (s.type === 'lift') {
+      const b = box(c, 14.1, 1.15, 0.85, 1.7, 1.55, '#2f3740', '#252c33', ol);
+      s.rect = { x: b.x - ts * 0.2, y: b.y, w: b.w + ts * 0.2, h: b.bottom - b.y };
+      const dx = b.x + b.w * 0.14, dw = b.w * 0.72, dy = b.faceY + b.faceH * 0.12, dh = b.faceH * 0.84;
+      c.fillStyle = '#1a2026'; c.fillRect(dx, dy, dw, dh);
+      for (let i = 0; i < 6; i++) { c.fillStyle = i % 2 ? '#1a1a1a' : rgba(COL.hazard, .8); c.fillRect(dx + i * dw / 6, dy, dw / 6, dh * 0.07); }
+      const vx = dx + dw * 0.08, vy = dy + dh * 0.14, vw = dw * 0.84, vh = dh * 0.5;
+      c.fillStyle = '#0a0e12'; c.fillRect(vx, vy, vw, vh);
+      const n = G.lift.length;
+      if (n) drawItem(c, vx + vw / 2, vy + vh * 0.94, 'broken_' + G.lift[0], ts * 0.55);
+      if (n > 1) { c.fillStyle = COL.hazard; c.font = `700 ${Math.max(8, ts * 0.18)}px 'Share Tech Mono', monospace`; c.fillText('×' + n, vx + vw / 2, vy + vh + dh * 0.12); }
+      c.strokeStyle = 'rgba(255,255,255,.12)'; c.lineWidth = 1; c.strokeRect(vx, vy, vw, vh);
+      c.fillStyle = '#2a323a'; c.fillRect(dx + dw / 2 - 1, vy + vh, 2, dy + dh - vy - vh);
+      const lc = n ? rgba(COL.hazard, Math.sin(now / 200) > 0 ? 1 : 0.3) : rgba(COL.good, 0.8);
+      c.fillStyle = lc; c.beginPath(); c.arc(b.x + b.w / 2, b.faceY + b.faceH * 0.06, ts * 0.06, 0, Math.PI * 2); c.fill();
+      c.fillStyle = COL.muted; c.font = `600 ${Math.max(8, ts * 0.2)}px Barlow, sans-serif`;
+      c.fillText('CARGO LIFT', b.x + b.w / 2, b.y - ts * 0.15);
       return;
     }
     if (s.type === 'chute') {
@@ -666,6 +768,7 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
 
   // items stand upright: (x, y) is the base point on screen
   function drawItem(c, x, y, kind, size) {
+    if (kind.includes('_')) return drawPart(c, x, y, kind, size);
     const fuel = kind.includes('Fuel'), spent = kind.startsWith('spent');
     if (fuel) {
       const w = size * 0.2, h = size * 0.9;
@@ -678,6 +781,27 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       c.beginPath(); c.ellipse(x, y - h, w / 2, w * 0.25, 0, 0, Math.PI * 2); c.fillStyle = spent ? '#5b7280' : '#a6e7fa'; c.fill();
     }
     if (spent) { c.strokeStyle = COL.bad; c.lineWidth = 2; c.beginPath(); c.moveTo(x - size * .15, y - size * .55); c.lineTo(x + size * .15, y - size * .25); c.stroke(); }
+  }
+
+  // ship parts: shield emitter (dish), turret (gun block), thruster (nozzle)
+  function drawPart(c, x, y, kind, size) {
+    const [state, id] = kind.split('_'), broken = state === 'broken';
+    const col = broken ? shade(sysColor(id), 0.45) : sysColor(id), metal = broken ? '#3d454d' : '#6b7884';
+    c.lineWidth = 1; c.strokeStyle = 'rgba(0,0,0,.55)';
+    if (id === 'shields') {
+      c.fillStyle = metal; c.fillRect(x - size * 0.05, y - size * 0.4, size * 0.1, size * 0.4);
+      c.fillRect(x - size * 0.18, y - size * 0.06, size * 0.36, size * 0.06);
+      c.fillStyle = col; c.beginPath(); c.ellipse(x, y - size * 0.5, size * 0.3, size * 0.14, broken ? 0.5 : 0, 0, Math.PI * 2); c.fill(); c.stroke();
+    } else if (id === 'weapons') {
+      c.fillStyle = metal; c.fillRect(x - size * 0.22, y - size * 0.22, size * 0.44, size * 0.22);
+      c.fillStyle = col; c.fillRect(x - size * 0.15, y - size * 0.42, size * 0.3, size * 0.22); c.strokeRect(x - size * 0.15 + .5, y - size * 0.42 + .5, size * 0.3 - 1, size * 0.22 - 1);
+      c.save(); c.translate(x + size * 0.1, y - size * 0.33); c.rotate(broken ? 0.45 : 0); c.fillRect(0, -size * 0.04, size * 0.32, size * 0.08); c.restore();
+    } else {
+      c.fillStyle = col; c.beginPath();
+      c.moveTo(x - size * 0.11, y - size * 0.55); c.lineTo(x + size * 0.11, y - size * 0.55); c.lineTo(x + size * 0.22, y); c.lineTo(x - size * 0.22, y); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = metal; c.fillRect(x - size * 0.14, y - size * 0.62, size * 0.28, size * 0.09);
+    }
+    if (broken) { c.strokeStyle = COL.bad; c.lineWidth = 2; c.beginPath(); c.moveTo(x - size * .18, y - size * .5); c.lineTo(x + size * .18, y - size * .15); c.stroke(); }
   }
 
   function drawReactor(now, near) {
@@ -870,6 +994,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     const t = FX.t + f.ph, out = (f.leave || 0) * SW * 0.4;
     return { x: g.cx + g.L * 0.95 + Math.cos(t * 1.1) * g.L * 0.22 + out, y: g.cy + Math.sin(t * 1.6 + f.ph) * SH * 0.3 };
   }
+  function partSpot(id, g) {
+    if (id === 'shields') return { x: g.cx - g.L * 0.2, y: g.cy + g.hh * 1.02 };
+    if (id === 'weapons') return { x: g.cx + g.L * 0.08, y: g.cy - g.hh * 1.08 };
+    return { x: g.cx - g.L * 0.47, y: g.cy + g.hh * 0.45 };
+  }
   function droneXY(d, g) { return { x: g.cx + d.u * g.L, y: g.cy + d.s * g.hh * 0.95 }; }
 
   function drawShip(now) {
@@ -970,7 +1099,16 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     // incoming contacts
     const inc = G.events.filter(e => e.eta > 0);
     c.textAlign = 'right'; c.textBaseline = 'top';
-    inc.forEach((e, i) => { c.fillStyle = COL.hazard; c.fillText(`CONTACT: ${e.name.toUpperCase()} ${Math.ceil(e.eta)}s`, SW - pad, pad + 20 + i * 18); });
+    inc.forEach((e, i) => {
+      const scan = e.scan > 0;
+      c.fillStyle = scan ? COL.muted : COL.hazard;
+      c.fillText(scan ? `UNKNOWN CONTACT · ${e.hint.toUpperCase()}` : `CONTACT: ${e.name.toUpperCase()} ${Math.ceil(e.eta)}s`, SW - pad, pad + 20 + i * 18);
+      // sensor blip at the edge of the feed, creeping closer once identified
+      const k = scan ? 0 : 1 - e.eta / e.warn0, bx = SW - 18 - k * SW * 0.14, byy = SH * (0.32 + 0.16 * i);
+      const pr = (FX.t * (scan ? 0.6 : 1.2) + i * 0.37) % 1, col = scan ? COL.muted : COL.hazard;
+      c.strokeStyle = rgba(col, (1 - pr) * 0.8); c.lineWidth = 1.5; c.beginPath(); c.arc(bx, byy, 3 + pr * (scan ? 26 : 16), 0, Math.PI * 2); c.stroke();
+      c.fillStyle = rgba(col, scan ? 0.5 + 0.5 * Math.sin(FX.t * 3) : 1); c.beginPath(); c.arc(bx, byy, 2.5 + k * 2.5, 0, Math.PI * 2); c.fill();
+    });
     c.restore();
   }
 
@@ -983,7 +1121,10 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       const fg = c.createLinearGradient(-L * 0.46, 0, -L * 0.46 - fl, 0);
       fg.addColorStop(0, 'rgba(210,190,255,.95)'); fg.addColorStop(0.4, rgba(COL['c-engines'], .7)); fg.addColorStop(1, rgba(COL['c-engines'], 0));
       c.fillStyle = fg;
-      [-0.45, 0.45].forEach(o => { c.beginPath(); c.moveTo(-L * 0.46, (o - 0.22) * hh); c.lineTo(-L * 0.46 - fl, o * hh); c.lineTo(-L * 0.46, (o + 0.22) * hh); c.closePath(); c.fill(); });
+      [-0.45, 0.45].forEach(o => {
+        const f = o > 0 && G.sys.engines.damaged ? fl * (Math.random() < 0.4 ? 0.1 : 0.45) : fl;
+        c.beginPath(); c.moveTo(-L * 0.46, (o - 0.22) * hh); c.lineTo(-L * 0.46 - f, o * hh); c.lineTo(-L * 0.46, (o + 0.22) * hh); c.closePath(); c.fill();
+      });
     }
     // hull silhouette
     c.fillStyle = '#5d6b78';
@@ -997,9 +1138,21 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     c.fillStyle = '#3e4955'; [-0.45, 0.45].forEach(o => c.fillRect(-L * 0.47, (o - 0.25) * hh, L * 0.14, hh * 0.5));
     // bridge
     c.fillStyle = '#7a8895'; c.beginPath(); c.ellipse(L * 0.24, -hh * 0.7, L * 0.08, hh * 0.25, 0, Math.PI, 0); c.fill();
-    // turret
-    c.fillStyle = G.sys.weapons.delivered > 0.5 ? '#a5532f' : '#4a4f55';
-    c.fillRect(L * 0.02, -hh * 1.12, L * 0.06, hh * 0.18); c.fillRect(L * 0.07, -hh * 1.08, L * 0.07, hh * 0.06);
+    // turret (knocked crooked and dark when damaged)
+    const wDmg = G.sys.weapons.damaged;
+    c.fillStyle = wDmg ? '#3b3336' : G.sys.weapons.delivered > 0.5 ? '#a5532f' : '#4a4f55';
+    c.fillRect(L * 0.02, -hh * 1.12, L * 0.06, hh * 0.18);
+    c.save(); c.translate(L * 0.07, -hh * 1.05); c.rotate(wDmg ? -0.5 : 0); c.fillRect(0, -hh * 0.03, L * 0.07, hh * 0.06); c.restore();
+    // shield emitter dish under the hull
+    const sDmg = G.sys.shields.damaged;
+    c.fillStyle = sDmg ? '#33393f' : '#7a8895'; c.fillRect(-L * 0.21, hh * 0.85, L * 0.02, hh * 0.15);
+    c.fillStyle = sDmg ? '#3a3f46' : G.sys.shields.delivered > 0.5 ? COL['c-shields'] : '#4a5662';
+    c.beginPath(); c.ellipse(-L * 0.2, hh * 1.03, L * 0.035, hh * 0.09, sDmg ? 0.4 : 0, 0, Math.PI * 2); c.fill();
+    // sparks and smoke from damaged parts
+    if (!G.over) ['shields', 'weapons', 'engines'].forEach(id => {
+      if (!G.sys[id].damaged || Math.random() > 0.08) return;
+      const p = partSpot(id, g); spark(p.x, p.y, id === 'engines' ? '#9aa4ad' : COL.hazard, 2, 45);
+    });
     // windows (life support)
     const life = ratio('life'), lifeOn = G.sys.life.delivered > 0.5;
     const alarmOn = life < 0.85 || active('breach');
@@ -1038,16 +1191,37 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     });
   }
   function chipFor(st) {
-    if (st.tripped) return '<span class="chip trip">TRIPPED</span>';
-    if (st.overload > 0) return '<span class="chip warn">OVERLOAD</span>';
-    if (st.demand - st.delivered > 0.5) return '<span class="chip low">LOW</span>';
-    return '<span class="chip ok">OK</span>';
+    const dmg = st.damaged ? ' <span class="chip dmg">DAMAGED</span>' : '';
+    if (st.tripped) return '<span class="chip trip">TRIPPED</span>' + dmg;
+    if (st.grace > 0 && st.alloc > limitOf(st.demand)) return '<span class="chip warn">TURN DOWN</span>' + dmg;
+    if (st.overload > 0) return '<span class="chip warn">OVERLOAD</span>' + dmg;
+    if (st.demand - st.delivered > 0.5) return '<span class="chip low">LOW</span>' + dmg;
+    return '<span class="chip ok">OK</span>' + dmg;
+  }
+  function partWhere(id) {
+    const h = G.p.hold;
+    if (G.lift.includes(id)) return 'at cargo lift';
+    if (G.bay.part === id) return G.bay.done ? 'repaired, in bay' : `in bay ${Math.floor(G.prog[id] * 100)}%`;
+    if (h === 'broken_' + id) return 'carrying';
+    if (h === 'fixed_' + id) return 'repaired, carrying';
+    return '';
+  }
+  function bayStatus() {
+    const b = G.bay;
+    if (!b.part) return G.lift.length ? 'Empty. A damaged part is waiting at the cargo lift.' : 'Empty. No damaged parts right now.';
+    if (b.done) return `${PART[b.part]} repaired. Take it to the cargo lift to install it.`;
+    const left = (1 - G.prog[b.part]) * G.D.fix;
+    if (G.bayPow <= 0) return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}%. Paused: no spare reactor power. Free some up at the consoles.`;
+    return `${PART[b.part]} ${Math.floor(G.prog[b.part] * 100)}% · using ${Math.round(G.bayPow)} of ${BAYDRAW} MW spare power · about ${Math.ceil(left * BAYDRAW / G.bayPow)}s left`;
   }
   let lastStation;
   function hud() {
     if (!G) return;
     const al = $('#alerts');
-    al.innerHTML = G.events.length ? G.events.map(e => e.eta > 0 ? `<li class="soon">${e.name}<span>in ${Math.ceil(e.eta)}s</span></li>` : `<li>${e.name}<span>${Math.ceil(e.left)}s left</span></li>`).join('') : '<li class="none">No active threats</li>';
+    const ev = G.events.map(e => e.scan > 0 ? `<li class="scan"><div>Unknown contact<small>${e.hint}</small></div><span>identifying</span></li>`
+      : e.eta > 0 ? `<li class="soon">${e.name}<span>in ${Math.ceil(e.eta)}s</span></li>` : `<li>${e.name}<span>${Math.ceil(e.left)}s left</span></li>`).join('');
+    const parts = Object.keys(PART).filter(id => G.sys[id].damaged).map(id => `<li class="part">${PART[id]} damaged<span>${partWhere(id)}</span></li>`).join('');
+    al.innerHTML = (ev || '<li class="none">No active threats</li>') + parts;
     SYS.forEach(s => {
       const st = G.sys[s.id], e = sysEls[s.id];
       e.nums.innerHTML = `${Math.round(st.delivered)} / ${Math.round(st.demand)} ${chipFor(st)}`;
@@ -1069,9 +1243,15 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
     if (sig !== lastStation) { lastStation = sig; buildStationCard(sig ? s : null); }
     if (sig && s.type === 'console') {
       const st = G.sys[s.sys], card = $('#stationCard');
-      card.querySelector('.readout').innerHTML = `${st.alloc}<small>needs ${Math.round(st.demand)} · max safe ${Math.floor(limitOf(st.demand))}</small>`;
+      card.querySelector('.readout').innerHTML = `${st.alloc}<small>needs ${Math.round(st.demand)} · max safe ${Math.floor(limitOf(st.demand))}${st.damaged ? ' · part damaged, 65% gets through' : ''}</small>`;
       card.querySelector('.state').innerHTML = chipFor(st) + ` <span class="hint">Reactor free: ${Math.max(0, Math.floor(cap - allocSum()))} MW</span>`;
+    } else if (sig === 'bay') $('#stationCard .state').textContent = bayStatus();
+    else if (sig === 'lift') {
+      const h = G.p.hold;
+      $('#stationCard .state').textContent = h && h.startsWith('fixed_') ? `Send the repaired ${PART[h.slice(6)].toLowerCase()} up to install it.`
+        : G.lift.length ? 'Waiting: ' + G.lift.map(id => PART[id].toLowerCase()).join(', ') + '.' : 'No parts waiting.';
     }
+    $('#r-bay').textContent = G.bay.part && !G.bay.done ? `${Math.round(G.bayPow)} MW` : G.bay.done ? 'Ready' : 'Idle';
     let pr = '';
     if (msgT > 0) pr = msg;
     else if (!G.over && !paused) {
@@ -1079,13 +1259,17 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       else if (G.fuel < 25) pr = 'Fuel rod low. Swap it at the fuel port.';
       else if (G.coolIn && G.cool < 25) pr = 'Coolant low. Reactor output is dropping.';
       else if (SYS.some(x => G.sys[x.id].tripped)) pr = 'Breaker tripped. Reset it at the breaker panel.';
+      else if (G.p.hold && G.p.hold.startsWith('broken_')) pr = `Carrying a damaged ${PART[G.p.hold.slice(7)].toLowerCase()}. Put it in the repair bay.`;
+      else if (G.p.hold && G.p.hold.startsWith('fixed_')) pr = `Take the repaired ${PART[G.p.hold.slice(6)].toLowerCase()} to the cargo lift to install it.`;
+      else if (G.bay.done) pr = 'Repair complete. Collect the part from the repair bay.';
+      else if (G.lift.length) pr = `Damaged ${PART[G.lift[0]].toLowerCase()} waiting at the cargo lift.`;
     }
     $('#prompt').textContent = pr;
   }
   function buildStationCard(s) {
     const card = $('#stationCard');
     card.innerHTML = '';
-    if (!s) { card.classList.add('idle'); card.innerHTML = '<h3>Station</h3><p class="hint">Walk up to a console, the breaker panel, the reactor ports, the racks or the disposal chute to use it.</p>'; return; }
+    if (!s) { card.classList.add('idle'); card.innerHTML = '<h3>Station</h3><p class="hint">Walk up to a console, the breaker panel, the reactor ports, the racks, the disposal chute, the cargo lift or the repair bay to use it.</p>'; return; }
     card.classList.remove('idle');
     const t = document.createElement('div'); t.className = 'title'; t.textContent = s.label; card.append(t);
     if (s.type === 'console') {
@@ -1094,10 +1278,11 @@ details ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction:
       hold(card.querySelector('#up'), () => adjust(1));
       card.querySelector('#match').addEventListener('click', matchLoad);
     } else {
-      const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Repair bay (offline)' };
+      const labels = { breaker: 'Reset tripped breakers', fuelport: 'Use fuel port', coolport: 'Use coolant port', fuelrack: 'Take or return a rod', coolrack: 'Take or return coolant', chute: 'Dispose of spent item', bay: 'Use repair bay', lift: 'Use cargo lift' };
       const b = document.createElement('button'); b.className = 'btn'; b.textContent = labels[s.type]; b.addEventListener('click', use);
       const h = document.createElement('div'); h.className = 'hint'; h.innerHTML = 'or press <kbd>Space</kbd>';
       card.append(b, h);
+      if (s.type === 'bay' || s.type === 'lift') { const st = document.createElement('div'); st.className = 'state hint'; card.append(st); }
     }
   }
   function hold(btn, fn) {
